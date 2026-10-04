@@ -205,7 +205,7 @@ const make = Effect.gen(function* () {
     const limits =
       scope.thread === undefined
         ? {
-            runtimeMode: scope.client?.runtimeModeCeiling ?? ("approval-required" as const),
+            runtimeMode: McpInvocationContext.clientRuntimeModeCeiling(scope.client),
             interactionMode: "default" as const,
           }
         : yield* engine.getThreadShell(scope.thread.threadId).pipe(

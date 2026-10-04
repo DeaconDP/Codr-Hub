@@ -1,4 +1,5 @@
 import {
+  type AuthMcpClientAccess,
   type EnvironmentId,
   McpCapabilityUnavailableError,
   OrchestratorMcpFailure,
@@ -30,8 +31,27 @@ export interface McpThreadCaller {
 export interface McpClientCaller {
   readonly sessionId: string;
   readonly label: string;
-  readonly runtimeModeCeiling: RuntimeMode;
+  /** Read only, or the most the threads it starts or changes may run with. */
+  readonly access: AuthMcpClientAccess;
 }
+
+/**
+ * Marks a tool that is not read-only for every caller but changes nothing
+ * when called by an MCP client (which has no thread of its own), so a client
+ * approved for read-only access may still call it.
+ */
+export const ReadOnlyClientSafe = Context.Reference<boolean>(
+  "t3/mcp/McpInvocationContext/ReadOnlyClientSafe",
+  { defaultValue: () => false },
+);
+
+/**
+ * The runtime mode a client caller's writes are capped at. A read-only client
+ * never reaches a write (the MCP server refuses those tools first), so it maps
+ * to the lowest mode rather than to nothing.
+ */
+export const clientRuntimeModeCeiling = (client: McpClientCaller | undefined): RuntimeMode =>
+  client === undefined || client.access === "read-only" ? "approval-required" : client.access;
 
 /**
  * Who is calling and what they may do. Tool parameters choose the target

@@ -54,7 +54,7 @@ export const readCaller = Effect.fn("mcp.readCaller")(function* () {
       threads,
       caller: undefined,
       limits: {
-        runtimeMode: scope.client?.runtimeModeCeiling ?? "approval-required",
+        runtimeMode: McpInvocationContext.clientRuntimeModeCeiling(scope.client),
         interactionMode: "default",
       },
     } satisfies Caller;

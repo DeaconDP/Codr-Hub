@@ -15,7 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import type { McpInvocationScope } from "./McpInvocationContext.ts";
+import { clientRuntimeModeCeiling, type McpInvocationScope } from "./McpInvocationContext.ts";
 import { assertTargetWithinLimits } from "./threadAccess.ts";
 
 export class ThreadMetadataMcpService extends Context.Service<
@@ -172,7 +172,7 @@ const make = Effect.gen(function* () {
       const limits =
         scope.thread === undefined
           ? {
-              runtimeMode: scope.client?.runtimeModeCeiling ?? ("approval-required" as const),
+              runtimeMode: clientRuntimeModeCeiling(scope.client),
               interactionMode: "default" as const,
             }
           : yield* threadManagement.getThreadShell(scope.thread.threadId).pipe(

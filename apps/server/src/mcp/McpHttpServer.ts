@@ -11,7 +11,7 @@ import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import type * as Types from "effect/Types";
-import { McpProtocol, McpSchema, McpServer, Tool } from "effect/unstable/ai";
+import { McpProtocol, McpSchema, McpServer, Tool, type Toolkit } from "effect/unstable/ai";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { PreviewAutomationError } from "@t3tools/contracts";
 
@@ -141,6 +141,56 @@ export const normalizeMcpHttpResponse = (
     ? HttpServerResponse.setStatus(response, 202)
     : response;
 };
+
+const readOnlyRefusal = (name: string) => {
+  const message = `${name} changes the environment, and this MCP client was approved for read-only access.`;
+  return new McpSchema.CallToolResult({
+    isError: true,
+    structuredContent: { _tag: "OrchestratorMcpFailure", code: "capability_denied", message },
+    content: [{ type: "text", text: message }],
+  });
+};
+
+/**
+ * The MCP server as tool registration sees it: a client approved for
+ * read-only access may call only tools annotated `Readonly` or
+ * `ReadOnlyClientSafe`. Every registration goes through this, so a new tool is
+ * refused to such a client until it is declared read-only.
+ */
+const readOnlyGated = (server: McpServer.McpServer["Service"]) =>
+  McpServer.McpServer.of({
+    ...server,
+    addTool: (options) =>
+      server.addTool(
+        Context.get(options.annotations, Tool.Readonly) ||
+          Context.get(options.annotations, McpInvocationContext.ReadOnlyClientSafe)
+          ? options
+          : {
+              ...options,
+              handle: (payload) =>
+                Effect.serviceOption(McpInvocationContext.McpInvocationContext).pipe(
+                  Effect.flatMap((invocation) =>
+                    Option.isSome(invocation) && invocation.value.client?.access === "read-only"
+                      ? Effect.succeed(readOnlyRefusal(options.tool.name))
+                      : options.handle(payload),
+                  ),
+                ),
+            },
+      ),
+  });
+
+/** `McpServer.toolkit`, registering through the read-only gate. */
+const toolkitRegistration = <Tools extends Record<string, Tool.Any>>(
+  toolkit: Toolkit.Toolkit<Tools>,
+) =>
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      yield* McpServer.registerToolkit(toolkit).pipe(
+        Effect.provideService(McpServer.McpServer, readOnlyGated(server)),
+      );
+    }),
+  ).pipe(Layer.provide(McpServer.McpServer.layer));
 
 // Session tokens are `<payload>.<signature>`; registry tokens are a bare base64url secret.
 const looksLikeProviderToken = (token: string) => token.length > 0 && !token.includes(".");
@@ -438,7 +488,7 @@ const previewSnapshotFailure = <E>(cause: Cause.Cause<E>) => {
 };
 
 const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot")(function* () {
-  const server = yield* McpServer.McpServer;
+  const server = readOnlyGated(yield* McpServer.McpServer);
   const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
   // The MCP tool runner only supplies the client, so hand the save path its services here.
   const saveServices = yield* Effect.context<
@@ -619,7 +669,7 @@ const registerImageTool = <T extends Tool.Any, E, R>(
   failureText: string,
 ) =>
   Effect.gen(function* () {
-    const server = yield* McpServer.McpServer;
+    const server = readOnlyGated(yield* McpServer.McpServer);
     yield* server.addTool({
       tool: new McpSchema.Tool({
         name: tool.name,
@@ -700,7 +750,7 @@ const registerDeviceScreenshot = Effect.fn("McpHttpServer.registerDeviceScreensh
   );
 });
 
-const PreviewStandardToolkitRegistrationLive = McpServer.toolkit(PreviewStandardToolkit).pipe(
+const PreviewStandardToolkitRegistrationLive = toolkitRegistration(PreviewStandardToolkit).pipe(
   Layer.provide(PreviewStandardToolkitHandlersLive),
 );
 
@@ -713,42 +763,42 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewSnapshotRegistrationLive,
 );
 
-export const OrchestratorToolkitRegistrationLive = McpServer.toolkit(OrchestratorToolkit).pipe(
+export const OrchestratorToolkitRegistrationLive = toolkitRegistration(OrchestratorToolkit).pipe(
   Layer.provide(OrchestratorToolkitHandlersLive),
   Layer.provide(OrchestratorMcpService.layer),
   Layer.provide(ThreadMetadataMcpService.layer),
 );
 
-export const ThreadToolkitRegistrationLive = McpServer.toolkit(ThreadToolkit).pipe(
+export const ThreadToolkitRegistrationLive = toolkitRegistration(ThreadToolkit).pipe(
   Layer.provide(ThreadToolkitHandlersLive),
 );
 
-const WorktreeToolkitRegistrationLive = McpServer.toolkit(WorktreeToolkit).pipe(
+const WorktreeToolkitRegistrationLive = toolkitRegistration(WorktreeToolkit).pipe(
   Layer.provide(WorktreeToolkitHandlersLive),
   Layer.provide(WorktreeMcpService.layer),
 );
 
-const PreviewControlsRegistrationLive = McpServer.toolkit(PreviewControlsToolkit).pipe(
+const PreviewControlsRegistrationLive = toolkitRegistration(PreviewControlsToolkit).pipe(
   Layer.provide(PreviewControlsHandlersLive),
 );
 
-const EnvironmentRegistrationLive = McpServer.toolkit(EnvironmentToolkit).pipe(
+const EnvironmentRegistrationLive = toolkitRegistration(EnvironmentToolkit).pipe(
   Layer.provide(EnvironmentHandlersLive),
 );
 
-const ProjectRegistrationLive = McpServer.toolkit(ProjectToolkit).pipe(
+const ProjectRegistrationLive = toolkitRegistration(ProjectToolkit).pipe(
   Layer.provide(ProjectHandlersLive),
 );
 
-const AttachmentRegistrationLive = McpServer.toolkit(AttachmentToolkit).pipe(
+const AttachmentRegistrationLive = toolkitRegistration(AttachmentToolkit).pipe(
   Layer.provide(AttachmentHandlersLive),
 );
 
-export const PullRequestsToolkitRegistrationLive = McpServer.toolkit(PullRequestsToolkit).pipe(
+export const PullRequestsToolkitRegistrationLive = toolkitRegistration(PullRequestsToolkit).pipe(
   Layer.provide(PullRequestsToolkitHandlersLive),
 );
 
-const DeviceStandardToolkitRegistrationLive = McpServer.toolkit(DeviceStandardToolkit).pipe(
+const DeviceStandardToolkitRegistrationLive = toolkitRegistration(DeviceStandardToolkit).pipe(
   Layer.provide(DeviceStandardToolkitHandlersLive),
 );
 

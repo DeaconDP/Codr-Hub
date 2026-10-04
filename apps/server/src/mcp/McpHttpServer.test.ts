@@ -354,6 +354,29 @@ it.effect.each([
   ).pipe(Effect.provide(TestLayer)),
 );
 
+it.effect("refuses a read-only client every tool not declared read-only", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const readOnly = {
+      ...invocation,
+      thread: undefined,
+      requestNamespace: "client:session-1",
+      client: { sessionId: "session-1", label: "Claude Code", access: "read-only" as const },
+    };
+    const click = yield* server
+      .callTool({ name: "preview_click", arguments: { locator: "text=Send" } })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, readOnly),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(click.isError).toBe(true);
+    expect(click.structuredContent).toMatchObject({
+      code: "capability_denied",
+      message: expect.stringContaining("read-only access"),
+    });
+  }).pipe(Effect.provide(TestLayer)),
+);
+
 it.effect("rejects non-boolean snapshot image options before selecting a browser host", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
@@ -897,7 +920,7 @@ it.effect("admits provider and OAuth client credentials and points only clients 
         environmentId,
         requestNamespace: "client:session-1",
         thread: undefined,
-        client: { sessionId: "session-1", label: "Claude Code", runtimeModeCeiling: "auto" },
+        client: { sessionId: "session-1", label: "Claude Code", access: "auto" },
         capabilities: new Set(["orchestration"]),
         issuedAt: 1,
       };
