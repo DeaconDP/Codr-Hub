@@ -1,5 +1,6 @@
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as McpToolAccessTestkit from "./McpToolAccess.testkit.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -52,12 +53,14 @@ const client = McpSchema.McpServerClient.of({
 });
 const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
   Layer.provideMerge(PreviewAutomationBroker.layer),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-http-server-test-" })),
   Layer.provideMerge(NodeServices.layer),
 );
 const PullRequestsTestLayer = McpHttpServer.PullRequestsToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
   Layer.provide(
     Layer.mergeAll(
       Layer.mock(ProjectService.ProjectService)({}),
@@ -354,7 +357,7 @@ it.effect.each([
   ).pipe(Effect.provide(TestLayer)),
 );
 
-it.effect("refuses a read-only client every tool not declared read-only", () =>
+it.effect("refuses preview tools to a client outside a thread before they run", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const readOnly = {
@@ -370,10 +373,7 @@ it.effect("refuses a read-only client every tool not declared read-only", () =>
         Effect.provideService(McpSchema.McpServerClient, client),
       );
     expect(click.isError).toBe(true);
-    expect(click.structuredContent).toMatchObject({
-      code: "capability_denied",
-      message: expect.stringContaining("read-only access"),
-    });
+    expect(click.structuredContent).toMatchObject({ code: "thread_credential_required" });
   }).pipe(Effect.provide(TestLayer)),
 );
 

@@ -184,8 +184,6 @@ const ThreadReadTool = Tool.make("t3_thread_read", {
 })
   .annotate(Tool.Title, "Read a T3 thread")
   .annotate(Tool.Readonly, false)
-  // Only a thread caller's read acknowledges a child's completion.
-  .annotate(McpInvocationContext.ReadOnlyClientSafe, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
 

@@ -15,14 +15,17 @@ import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import { McpSchema, McpServer } from "effect/unstable/ai";
 
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ServerConfig from "../../../config.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
+import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../../../vcs/VcsProcess.ts";
+import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { ProjectHandlersLive } from "./handlers.ts";
 import { ProjectToolkit } from "./tools.ts";
@@ -428,4 +431,112 @@ it.effect("a launch binds only an existing checkout that is one of the project's
       { type: "existing_worktree", worktreePath: repo },
     ]);
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+const launchedInputs: Array<ThreadLaunch.ThreadLaunchInput> = [];
+const mcpClient = McpSchema.McpServerClient.of({
+  clientId: 1,
+  protocolVersion: "2025-06-18",
+  clientCapabilities: {},
+  clientInfo: { name: "mcp-test", version: "1" },
+  initializePayload: {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "mcp-test", version: "1" },
+  },
+  getClient: Effect.die("unused"),
+});
+
+it.effect("a supervised plan-mode thread launches within its own modes in another project", () =>
+  Effect.gen(function* () {
+    const sourceThreadId = ThreadId.make("source-thread");
+    const otherProjectId = ProjectId.make("project:other");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const launched = launchedInputs;
+    launched.length = 0;
+    const server = yield* McpServer.McpServer;
+    const launch = (args: Record<string, unknown>) =>
+      server.callTool({ name: "t3_thread_launch", arguments: { title: "Audit", ...args } }).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          environmentId: EnvironmentId.make("environment"),
+          requestNamespace: "session",
+          thread: { threadId: sourceThreadId, providerSessionId: "session", providerInstanceId },
+          client: undefined,
+          issuedAt: 0,
+          capabilities: new Set(["orchestration" as const]),
+        }),
+        Effect.provideService(McpSchema.McpServerClient, mcpClient),
+      );
+
+    const allowed = yield* launch({ projectId: otherProjectId });
+    expect(allowed.isError).toBe(false);
+    expect(
+      launched.map((input) => [input.projectId, input.runtimeMode, input.interactionMode]),
+    ).toEqual([[otherProjectId, "approval-required", "plan"]]);
+
+    const broaderRuntime = yield* launch({ projectId: otherProjectId, runtimeMode: "full-access" });
+    expect(broaderRuntime.structuredContent).toMatchObject({
+      code: "runtime_mode_escalation_denied",
+    });
+    const broaderInteraction = yield* launch({
+      projectId: otherProjectId,
+      interactionMode: "default",
+    });
+    expect(broaderInteraction.structuredContent).toMatchObject({
+      code: "interaction_mode_escalation_denied",
+    });
+    expect(launched).toHaveLength(1);
+  }).pipe(
+    Effect.provide(
+      McpHttpServer.ProjectRegistrationLive.pipe(
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provide(
+          Layer.mergeAll(
+            NodeCrypto.layer,
+            Layer.mock(ThreadManagement.ThreadManagementService)({
+              getThreadShell: (threadId) =>
+                Effect.succeed({
+                  id: threadId,
+                  projectId: ProjectId.make("project:caller"),
+                  providerInstanceId: ProviderInstanceId.make("codex"),
+                  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+                  runtimeMode: "approval-required",
+                  interactionMode: "plan",
+                  activeRunId: "active-run",
+                  archivedAt: null,
+                  deletedAt: null,
+                } as OrchestrationV2ThreadShell),
+            }),
+            Layer.mock(ThreadLaunch.ThreadLaunchService)({
+              launch: (input) => {
+                launchedInputs.push(input);
+                return Effect.succeed({
+                  threadId: input.threadId,
+                  projection: {
+                    thread: {
+                      id: input.threadId,
+                      projectId: input.projectId,
+                      modelSelection: input.modelSelection,
+                    },
+                    runs: [],
+                  },
+                  resumed: false,
+                } as unknown as ThreadLaunch.ThreadLaunchResult);
+              },
+            }),
+            Layer.mock(Project.ProjectService)({}),
+            Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+              namedProjectsRoot: "/projects",
+            }),
+            Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+            Layer.mock(Repositories.SourceControlRepositoryService)({}),
+            NodeServices.layer,
+            ServerConfig.layerTest(process.cwd(), { prefix: "t3-supervised-launch-" }).pipe(
+              Layer.provide(NodeServices.layer),
+            ),
+          ),
+        ),
+      ),
+    ),
+  ),
 );

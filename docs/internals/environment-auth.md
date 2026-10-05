@@ -37,14 +37,20 @@ The user grants either read-only access or a runtime-mode ceiling, not a
 scope list: MCP tools are all orchestration, and `orchestration:operate`
 alone would let an agent start a thread in full access and act through it.
 The result is an ordinary session with subject `mcp-client`. A read-only
-grant holds `orchestration:read` alone, and `/mcp` refuses it every tool not
-annotated `Readonly` (or `ReadOnlyClientSafe`) before the handler runs, so a
-new write tool is closed to it by default. Any other grant adds `orchestration:operate` and a signed
-ceiling. Only `/mcp` accepts these sessions. Every other HTTP and WebSocket
-path rejects that subject, because the RPC surface would let the agent act
-above its ceiling. Inside MCP the credential sets the limits and tool
-parameters only pick targets; see
-[threadAccess](../../apps/server/src/mcp/threadAccess.ts).
+grant holds `orchestration:read` alone. Any other grant adds
+`orchestration:operate` and a signed ceiling. Only `/mcp` accepts these
+sessions. Every other HTTP and WebSocket path rejects that subject, because
+the RPC surface would let the agent act above its ceiling.
+
+Inside MCP the credential sets the limits and tool parameters only pick
+targets. Every tool is listed in one table,
+[McpToolAccess](../../apps/server/src/mcp/McpToolAccess.ts), by what it does:
+reads, changes threads, starts threads, changes the environment, or acts as
+the calling thread. The gate checks that before any handler runs: a caller
+never starts or changes a thread with broader runtime or interaction modes
+than its own (a T3 thread's modes, or a client's ceiling), and a read-only
+client only reads. A tool missing from the table fails registration, so a new
+tool cannot ship without that decision.
 
 Issuer and resource URLs come from the request's Host and
 `X-Forwarded-Proto`, so one server answers over loopback, Tailscale Serve and a

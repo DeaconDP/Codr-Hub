@@ -18,7 +18,9 @@ import { PreviewAutomationError } from "@t3tools/contracts";
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
 import * as DeviceService from "../device/DeviceService.ts";
+import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import * as McpToolAccess from "./McpToolAccess.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
 import { PreviewControlsHandlersLive } from "./toolkits/previewControls/handlers.ts";
@@ -142,52 +144,31 @@ export const normalizeMcpHttpResponse = (
     : response;
 };
 
-const readOnlyRefusal = (name: string) => {
-  const message = `${name} changes the environment, and this MCP client was approved for read-only access.`;
-  return new McpSchema.CallToolResult({
-    isError: true,
-    structuredContent: { _tag: "OrchestratorMcpFailure", code: "capability_denied", message },
-    content: [{ type: "text", text: message }],
-  });
-};
-
 /**
- * The MCP server as tool registration sees it: a client approved for
- * read-only access may call only tools annotated `Readonly` or
- * `ReadOnlyClientSafe`. Every registration goes through this, so a new tool is
- * refused to such a client until it is declared read-only.
+ * The MCP server as tool registration sees it. Every registration goes
+ * through this, so each tool's access is checked before its handler runs (see
+ * `McpToolAccess`).
  */
-const readOnlyGated = (server: McpServer.McpServer["Service"]) =>
-  McpServer.McpServer.of({
-    ...server,
-    addTool: (options) =>
-      server.addTool(
-        Context.get(options.annotations, Tool.Readonly) ||
-          Context.get(options.annotations, McpInvocationContext.ReadOnlyClientSafe)
-          ? options
-          : {
-              ...options,
-              handle: (payload) =>
-                Effect.serviceOption(McpInvocationContext.McpInvocationContext).pipe(
-                  Effect.flatMap((invocation) =>
-                    Option.isSome(invocation) && invocation.value.client?.access === "read-only"
-                      ? Effect.succeed(readOnlyRefusal(options.tool.name))
-                      : options.handle(payload),
-                  ),
-                ),
-            },
-      ),
-  });
+const accessGatedServer = Effect.gen(function* () {
+  const server = yield* McpServer.McpServer;
+  const threads = yield* ThreadManagementService.ThreadManagementService;
+  return McpToolAccess.gatedServer(server, (threadId) =>
+    threads.getThreadShell(threadId).pipe(
+      Effect.map((shell) => shell ?? undefined),
+      Effect.mapError(() => McpToolAccess.shellLookupFailed),
+    ),
+  );
+});
 
-/** `McpServer.toolkit`, registering through the read-only gate. */
+/** `McpServer.toolkit`, registering through the access gate. */
 const toolkitRegistration = <Tools extends Record<string, Tool.Any>>(
   toolkit: Toolkit.Toolkit<Tools>,
 ) =>
   Layer.effectDiscard(
     Effect.gen(function* () {
-      const server = yield* McpServer.McpServer;
+      const server = yield* accessGatedServer;
       yield* McpServer.registerToolkit(toolkit).pipe(
-        Effect.provideService(McpServer.McpServer, readOnlyGated(server)),
+        Effect.provideService(McpServer.McpServer, server),
       );
     }),
   ).pipe(Layer.provide(McpServer.McpServer.layer));
@@ -488,7 +469,7 @@ const previewSnapshotFailure = <E>(cause: Cause.Cause<E>) => {
 };
 
 const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot")(function* () {
-  const server = readOnlyGated(yield* McpServer.McpServer);
+  const server = yield* accessGatedServer;
   const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
   // The MCP tool runner only supplies the client, so hand the save path its services here.
   const saveServices = yield* Effect.context<
@@ -669,7 +650,7 @@ const registerImageTool = <T extends Tool.Any, E, R>(
   failureText: string,
 ) =>
   Effect.gen(function* () {
-    const server = readOnlyGated(yield* McpServer.McpServer);
+    const server = yield* accessGatedServer;
     yield* server.addTool({
       tool: new McpSchema.Tool({
         name: tool.name,
@@ -786,7 +767,7 @@ const EnvironmentRegistrationLive = toolkitRegistration(EnvironmentToolkit).pipe
   Layer.provide(EnvironmentHandlersLive),
 );
 
-const ProjectRegistrationLive = toolkitRegistration(ProjectToolkit).pipe(
+export const ProjectRegistrationLive = toolkitRegistration(ProjectToolkit).pipe(
   Layer.provide(ProjectHandlersLive),
 );
 

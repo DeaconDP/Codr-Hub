@@ -117,9 +117,9 @@ export const readMutationCaller = Effect.fn("mcp.readMutationCaller")(function* 
 });
 
 /**
- * Actions that change the environment itself (projects, preferences, launching
- * outside a project) need full access: a thread caller in full-access/default
- * mode, or a client approved with a full-access ceiling.
+ * Actions that change the environment itself (projects, preferences) need full
+ * access: a thread caller in full-access/default mode, or a client approved
+ * with a full-access ceiling.
  */
 export const readFullAccessCaller = Effect.fn("mcp.readFullAccessCaller")(function* (
   message: string,

@@ -8,7 +8,7 @@ import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
-import { resolveRuntimeMode } from "../../OrchestratorMcpService.ts";
+import { resolveInteractionMode, resolveRuntimeMode } from "../../OrchestratorMcpService.ts";
 import {
   newCommandId,
   readCaller,
@@ -67,21 +67,14 @@ const mutation = Effect.gen(function* () {
 export const ProjectHandlersLive = ProjectToolkit.toLayer({
   t3_thread_launch: (input) =>
     Effect.gen(function* () {
+      // The access gate already checked the requested modes against the caller's;
+      // these resolve the defaults to the caller's own modes.
       const context = yield* readMutationCaller();
       const { caller, limits } = context;
-      // A thread caller launches only as itself (full-access/default), as before. A client
-      // launches anything up to its ceiling.
-      if (
-        caller !== undefined &&
-        (caller.runtimeMode !== "full-access" || caller.interactionMode !== "default")
-      )
-        return yield* new OrchestratorMcpFailure({
-          code: "capability_denied",
-          message: "Project launches require a full-access/default calling thread.",
-        });
-      const runtimeMode = yield* resolveRuntimeMode(
-        limits.runtimeMode,
-        input.runtimeMode ?? caller?.runtimeMode,
+      const runtimeMode = yield* resolveRuntimeMode(limits.runtimeMode, input.runtimeMode);
+      const interactionMode = yield* resolveInteractionMode(
+        limits.interactionMode,
+        input.interactionMode,
       );
       const commandId = yield* newCommandId();
       const threadId = ThreadId.make(commandId);
@@ -146,7 +139,7 @@ export const ProjectHandlersLive = ProjectToolkit.toLayer({
         title: input.title,
         modelSelection,
         runtimeMode,
-        interactionMode: input.interactionMode ?? caller?.interactionMode ?? "default",
+        interactionMode,
         workspaceStrategy: input.workspaceStrategy ?? { type: "root" },
         ...(input.message === undefined && attachments.length === 0
           ? {}
