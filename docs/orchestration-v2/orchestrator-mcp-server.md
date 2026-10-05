@@ -9,7 +9,7 @@ agent can use this endpoint to:
 - wait for or poll the sub-agent's durable result;
 - cancel an active delegated task; and
 - create one or more ordinary top-level T3 threads;
-- list and incrementally read project threads;
+- list a project's threads and incrementally read any thread;
 - rename threads, regenerate titles, and link or unlink pull requests;
 - send or steer follow-up messages; and
 - wait for or interrupt ordinary thread runs.
@@ -20,7 +20,7 @@ only the supplied task prompt, plus an optional role instruction supplied in
 the same tool call. Parent conversation history is not copied into the child.
 
 `ThreadManagementService` is the shared server application boundary for V2
-WebSocket commands and MCP. It owns project-scoped lookup, listing, send-mode
+WebSocket commands and MCP. It owns thread lookup, listing, send-mode
 selection, durable send postconditions, wait polling, and interrupt selection;
 `OrchestratorV2` remains the lower-level command/event processor. Transport
 adapters only authenticate, resolve transport-specific inputs, and shape
@@ -500,7 +500,7 @@ Coverage includes:
 - async status polling;
 - cancellation;
 - batch ordinary-thread creation;
-- project-scoped thread listing and timeline reads;
+- thread listing and timeline reads, including another project's threads;
 - ordinary-thread send, wait, steering, and interruption;
 - inheritance and per-thread provider overrides; and
 - idempotent retries.
