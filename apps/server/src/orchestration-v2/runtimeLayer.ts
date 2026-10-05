@@ -51,6 +51,8 @@ import { layer as threadLifecycleServiceLayer } from "./ThreadLifecycleService.t
 import { layer as threadForkServiceLayer } from "./ThreadForkService.ts";
 import { layer as turnItemPositionStoreLayer } from "./TurnItemPositionStore.ts";
 import { layer as scheduledTaskServiceLayer } from "../scheduledTasks/ScheduledTaskService.ts";
+import { layer as codrHubServiceLayer } from "../codrHub/CodrHubService.ts";
+import * as ProcessRunner from "../processRunner.ts";
 
 /** The shared application event log and its command receipts. */
 export const OrchestrationEventInfrastructureLayerLive = Layer.mergeAll(
@@ -259,6 +261,17 @@ const threadLifecycleProvided = threadLifecycleServiceLayer.pipe(
 const scheduledTaskProvided = scheduledTaskServiceLayer.pipe(
   Layer.provide(Layer.mergeAll(threadLaunchProvided, threadManagementProvided)),
 );
+// Codr-Hub
+const codrHubProvided = codrHubServiceLayer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      threadLaunchProvided,
+      threadManagementProvided,
+      ProjectServiceLayerLive,
+      ProcessRunner.layer,
+    ),
+  ),
+);
 const providerContinuationWorkerProvided = providerContinuationWorkerLive.pipe(
   Layer.provide(
     Layer.mergeAll(providerContinuationRequestsLayer, threadManagementProvided, idAllocatorLayer),
@@ -314,6 +327,7 @@ export const OrchestrationV2ProductionLayerLive = Layer.mergeAll(
   threadLaunchProvided,
   threadLifecycleProvided,
   scheduledTaskProvided,
+  codrHubProvided,
   UsageLimitRecoveryWorker.workerLive.pipe(
     Layer.provide(Layer.mergeAll(projectionStoreLayer, threadManagementProvided)),
   ),

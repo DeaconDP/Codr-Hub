@@ -1081,6 +1081,11 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:scheduled-tasks:live",
       tag: WS_METHODS.scheduledTasksSubscribe,
     }),
+    /** Codr-Hub snapshot: portfolio, pace, and autopilot state, re-sent after every change. */
+    hubLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:hub:live",
+      tag: WS_METHODS.hubSubscribe,
+    }),
     // A cold transcript scan is measured in seconds, so keep the result around
     // long enough that switching windows or re-rendering does not rescan.
     usageSummary: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -1284,6 +1289,48 @@ export function createServerEnvironmentAtoms<R, E>(
     runScheduledTaskNow: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:scheduled-task:run-now",
       tag: WS_METHODS.scheduledTasksRunNow,
+    }),
+    // Codr-Hub. Portfolio writes share one serial lane per environment so
+    // edits commit in the order the owner made them.
+    hubUpsertProject: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubUpsertProject",
+      tag: WS_METHODS.hubUpsertProject,
+      concurrency: configConcurrency,
+    }),
+    hubDeleteProject: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubDeleteProject",
+      tag: WS_METHODS.hubDeleteProject,
+      concurrency: configConcurrency,
+    }),
+    hubSetStrategy: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubSetStrategy",
+      tag: WS_METHODS.hubSetStrategy,
+      concurrency: configConcurrency,
+    }),
+    hubUpdateSettings: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubUpdateSettings",
+      tag: WS_METHODS.hubUpdateSettings,
+      concurrency: configConcurrency,
+    }),
+    hubSetNode: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubSetNode",
+      tag: WS_METHODS.hubSetNode,
+      concurrency: configConcurrency,
+    }),
+    hubImport: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubImport",
+      tag: WS_METHODS.hubImport,
+      concurrency: configConcurrency,
+    }),
+    hubSync: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubSync",
+      tag: WS_METHODS.hubSync,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    hubRunAutopilot: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubRunAutopilot",
+      tag: WS_METHODS.hubRunAutopilot,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
     }),
     refreshUsageRates: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:refresh-usage-rates",

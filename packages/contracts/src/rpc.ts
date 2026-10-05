@@ -302,6 +302,24 @@ import {
   ProviderConsumeResetCreditResult,
 } from "./providerUsageLimits.ts";
 import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
+// Codr-Hub
+import {
+  HubDeleteProjectInput,
+  HubError,
+  HubImportInput,
+  HubImportResult,
+  HubOk,
+  HubRunAutopilotInput,
+  HubRunAutopilotResult,
+  HubSetNodeInput,
+  HubSetStrategyInput,
+  HubSnapshot,
+  HubSubscribeInput,
+  HubSyncInput,
+  HubSyncStatus,
+  HubUpdateSettingsInput,
+  HubUpsertProjectInput,
+} from "./codrHub.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
   ScheduledTaskDeleteInput,
@@ -474,6 +492,17 @@ export const WS_METHODS = {
   scheduledTasksSetEnabled: "scheduledTasks.setEnabled",
   scheduledTasksDelete: "scheduledTasks.delete",
   scheduledTasksRunNow: "scheduledTasks.runNow",
+
+  // Codr-Hub
+  hubSubscribe: "hub.subscribe",
+  hubUpsertProject: "hub.upsertProject",
+  hubDeleteProject: "hub.deleteProject",
+  hubSetStrategy: "hub.setStrategy",
+  hubUpdateSettings: "hub.updateSettings",
+  hubSetNode: "hub.setNode",
+  hubImport: "hub.import",
+  hubSync: "hub.sync",
+  hubRunAutopilot: "hub.runAutopilot",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -1668,6 +1697,55 @@ const WsScheduledTasksRunNowRpc = Rpc.make(WS_METHODS.scheduledTasksRunNow, {
   error: Schema.Union([ScheduledTaskError, EnvironmentAuthorizationError]),
 });
 
+// Codr-Hub
+const HubRpcError = Schema.Union([HubError, EnvironmentAuthorizationError]);
+const WsHubSubscribeRpc = Rpc.make(WS_METHODS.hubSubscribe, {
+  payload: HubSubscribeInput,
+  success: HubSnapshot,
+  error: HubRpcError,
+  stream: true,
+});
+const WsHubUpsertProjectRpc = Rpc.make(WS_METHODS.hubUpsertProject, {
+  payload: HubUpsertProjectInput,
+  success: HubOk,
+  error: HubRpcError,
+});
+const WsHubDeleteProjectRpc = Rpc.make(WS_METHODS.hubDeleteProject, {
+  payload: HubDeleteProjectInput,
+  success: HubOk,
+  error: HubRpcError,
+});
+const WsHubSetStrategyRpc = Rpc.make(WS_METHODS.hubSetStrategy, {
+  payload: HubSetStrategyInput,
+  success: HubOk,
+  error: HubRpcError,
+});
+const WsHubUpdateSettingsRpc = Rpc.make(WS_METHODS.hubUpdateSettings, {
+  payload: HubUpdateSettingsInput,
+  success: HubOk,
+  error: HubRpcError,
+});
+const WsHubSetNodeRpc = Rpc.make(WS_METHODS.hubSetNode, {
+  payload: HubSetNodeInput,
+  success: HubOk,
+  error: HubRpcError,
+});
+const WsHubImportRpc = Rpc.make(WS_METHODS.hubImport, {
+  payload: HubImportInput,
+  success: HubImportResult,
+  error: HubRpcError,
+});
+const WsHubSyncRpc = Rpc.make(WS_METHODS.hubSync, {
+  payload: HubSyncInput,
+  success: HubSyncStatus,
+  error: HubRpcError,
+});
+const WsHubRunAutopilotRpc = Rpc.make(WS_METHODS.hubRunAutopilot, {
+  payload: HubRunAutopilotInput,
+  success: HubRunAutopilotResult,
+  error: HubRpcError,
+});
+
 const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess, {
   payload: Schema.Struct({}),
   success: AuthAccessStreamEvent,
@@ -1753,6 +1831,15 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksSetEnabledRpc,
   WsScheduledTasksDeleteRpc,
   WsScheduledTasksRunNowRpc,
+  WsHubSubscribeRpc,
+  WsHubUpsertProjectRpc,
+  WsHubDeleteProjectRpc,
+  WsHubSetStrategyRpc,
+  WsHubUpdateSettingsRpc,
+  WsHubSetNodeRpc,
+  WsHubImportRpc,
+  WsHubSyncRpc,
+  WsHubRunAutopilotRpc,
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,

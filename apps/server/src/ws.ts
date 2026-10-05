@@ -119,6 +119,7 @@ import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts"
 import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts";
 import * as IdAllocator from "./orchestration-v2/IdAllocator.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
+import * as CodrHub from "./codrHub/CodrHubService.ts";
 import {
   archivedShellStreamItemFromThreadShell,
   buildActiveShellSnapshot,
@@ -1216,6 +1217,7 @@ const makeWsRpcLayer = (
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
+      const codrHub = yield* CodrHub.CodrHubService;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* DeviceService.DeviceService;
@@ -2079,6 +2081,43 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.scheduledTasksRunNow, scheduledTasks.runNow(input), {
             "rpc.aggregate": "scheduledTasks",
             "scheduled_task.id": input.id,
+          }),
+        // Codr-Hub
+        [WS_METHODS.hubSubscribe]: (_input) =>
+          observeRpcStream(WS_METHODS.hubSubscribe, codrHub.subscribe(), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubUpsertProject]: (input) =>
+          observeRpcEffect(WS_METHODS.hubUpsertProject, codrHub.upsertProject(input), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubDeleteProject]: (input) =>
+          observeRpcEffect(WS_METHODS.hubDeleteProject, codrHub.deleteProject(input), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubSetStrategy]: (input) =>
+          observeRpcEffect(WS_METHODS.hubSetStrategy, codrHub.setStrategy(input), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubUpdateSettings]: (input) =>
+          observeRpcEffect(WS_METHODS.hubUpdateSettings, codrHub.updateSettings(input), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubSetNode]: (input) =>
+          observeRpcEffect(WS_METHODS.hubSetNode, codrHub.setNode(input), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubImport]: (input) =>
+          observeRpcEffect(WS_METHODS.hubImport, codrHub.importProjects(input), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubSync]: (input) =>
+          observeRpcEffect(WS_METHODS.hubSync, codrHub.sync(input), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubRunAutopilot]: (_input) =>
+          observeRpcEffect(WS_METHODS.hubRunAutopilot, codrHub.runAutopilot(), {
+            "rpc.aggregate": "codrHub",
           }),
         [WS_METHODS.serverProbe]: (_input) =>
           observeRpcEffect(WS_METHODS.serverProbe, Effect.succeed({}), {

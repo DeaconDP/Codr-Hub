@@ -161,3 +161,10 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 
 - Don't verify with browsers or computer use unless the user explicitly agrees or requests it.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+
+## Codr-Hub (this fork)
+
+This repository is Codr-Hub, a soft fork of T3 Code. Read `docs/codr-hub/BRIEF.md` and `docs/codr-hub/ARCHITECTURE.md` before changing Codr-Hub code. The owner's preferences override two defaults above:
+
+- `ROADMAP.md` (epics, plus a `## Deferred` log with date, reason and `file:line`) and `TODO.md` (active tasks) are kept in the repo. Read both before proposing next steps, and keep them current.
+- New Codr-Hub code goes in its own modules. Upstream files get hook-in lines only, and each one is listed in the fork-seams table in `docs/codr-hub/ARCHITECTURE.md`.
