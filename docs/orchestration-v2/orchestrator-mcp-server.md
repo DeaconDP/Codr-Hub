@@ -331,15 +331,16 @@ launching again. `create_threads` remains the batch option for a shared checkout
 
 ### `t3_thread_list`
 
-Lists durable thread shells in the calling thread's project, newest first.
-Callers can filter by title, run status, and whether app-owned sub-agent threads
-are included. Results are bounded and offset-paginated. Deleted threads and
-threads from other projects are never exposed.
+Lists durable thread shells in one project, newest first: `projectId` when
+given, else the calling thread's project. Callers can filter by title, run
+status, and whether app-owned sub-agent threads are included. Results are
+bounded and offset-paginated. Deleted threads are never listed.
 
 ### `t3_thread_read`
 
-Reads a project-scoped thread's durable state, recent runs, and visible
-timeline. The default `messages` view returns user messages, assistant
+Reads the durable state, recent runs, and visible timeline of any thread in
+the environment by thread ID. A deleted thread returns `thread_not_found`. The
+default `messages` view returns user messages, assistant
 messages, and proposed plans. The `activity` view also returns summarized tool,
 reasoning, checkpoint, handoff, and runtime-request items. Large item text is
 bounded and reports whether it was truncated. `afterPosition` and
@@ -353,7 +354,7 @@ distinguishable from human-authored messages.
 
 ### `t3_thread_update`
 
-Updates metadata for the calling thread or another thread in the same project.
+Updates metadata for the calling thread or any other thread in the environment.
 The typed actions are `rename`, `regenerate_title`, `link_pull_request`, and
 `unlink_pull_request`. A link input supplies the repository, number, and URL;
 the server records the target thread's project ID. Branch and workspace changes
@@ -367,7 +368,7 @@ detail also exposes an in-flight title regeneration.
 
 ### `t3_thread_send`
 
-Sends a message to an ordinary or delegated thread in the calling project:
+Sends a message to any ordinary or delegated thread in the environment:
 
 - `auto` starts an idle thread, steers a fully active turn, or queues behind a
   turn that is not yet steerable;
@@ -434,9 +435,11 @@ results use the latest assistant content from the final work turn.
   mode. It may not escalate privileges.
 - A child interaction mode may stay equal to or narrow from `default` to
   `plan`. It may not escalate from `plan` to `default`.
-- General thread management is limited to the calling thread's project. Send
-  additionally enforces the same runtime and interaction privilege ceiling as
-  child creation.
+- Thread tools take any thread in the environment as a target. For a thread
+  caller, list and search cover one project: its own unless `projectId` is given.
+- A tool that changes another thread needs the calling thread's live run, and
+  the target's runtime and interaction modes may not be broader than the
+  caller's. This is the same privilege ceiling as child creation.
 - Provider instances must be enabled, installed, available, authenticated, and
   backed by a V2 adapter.
 - A requested model must be advertised by the selected provider when the
