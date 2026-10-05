@@ -270,6 +270,9 @@ const make = Effect.gen(function* () {
             ? Option.none<string>()
             : Option.some(path.resolve(config.baseDir, "scratch")),
         ),
+        // The probe can join another caller's git detection through the VCS
+        // registry's cache and inherit its interrupt. Pass that on, or Scratch
+        // would stay hidden for the process lifetime.
         Effect.catchCause((cause) =>
           Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.succeed(Option.none<string>()),
         ),
