@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none">
+  <g transform="translate(0 0) scale(0.046875)"><defs>
+    <path id="chevron" d="M0-58 L52 56 L0 16 L-52 56 Z"/>
+  </defs>
+  <g
+    fill="#ffffff"
+    stroke="#ffffff"
+    stroke-width="22"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+    transform="translate(256 256) scale(1.1) translate(-238.3 -261.7)"
+  >
+    <use href="#chevron" transform="translate(256 168) rotate(45)"/>
+    <use href="#chevron" transform="translate(168 320) rotate(45)"/>
+    <use href="#chevron" transform="translate(344 320) rotate(45)"/>
+  </g></g>
+</svg>

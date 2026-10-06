@@ -98,4 +98,10 @@ describe("brand-assets", () => {
     expect(BRAND_ASSET_PATHS.nightlyMacIconPng).toMatch(/^assets\/nightly\/nightly-/);
     expect(BRAND_ASSET_PATHS.productionMacIconPng).toMatch(/^assets\/prod\/black-/);
   });
+
+  it("points every channel at Codr-Hub charcoal masters under assets/", () => {
+    expect(BRAND_ASSET_PATHS.developmentIosIconPng).toBe("assets/dev/blueprint-ios-1024.png");
+    expect(BRAND_ASSET_PATHS.nightlyIosIconPng).toBe("assets/nightly/nightly-ios-1024.png");
+    expect(BRAND_ASSET_PATHS.productionIosIconPng).toBe("assets/prod/black-ios-1024.png");
+  });
 });

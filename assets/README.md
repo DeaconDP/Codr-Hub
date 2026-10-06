@@ -6,7 +6,8 @@ The three Icon Composer projects are the source of truth for full application ic
 - `nightly/app-icon.icon`
 - `prod/app-icon.icon`
 
-Each project uses `text.svg` for the T3 mark and `background.svg` when the background is a vector layer. Additional layers use semantic names that describe their role and placement.
+Each project uses `Assets/glyph.png` for the Codr-Hub chevron mark on a charcoal plate
+(Deez-Iconz / Cursor-Hub family). There is no separate `text.svg` wordmark layer.
 
 Run `vp run icons:export` from the repository root to regenerate the tracked iOS, Linux, Windows, and web assets. The development web exports are also copied to `apps/web/public` for the browser favicon and splash screen. Run `vp run icons:check` to verify that the generated assets and public copies match their sources without changing files.
 
@@ -53,15 +54,15 @@ Do not edit the generated PNG or ICO files directly.
 
 Android masks the central 72dp of a 108dp adaptive canvas, and the Android 12+ splash screen masks
 the central two thirds of a 288dp canvas, so the Icon Composer exports cannot be used directly:
-their rounded-square silhouette gets framed again and the wordmark is cropped. The Android artwork
-is instead rendered from the same Icon Composer SVG sources by `vp run icons:export:android`:
+their rounded-square silhouette gets framed again and the glyph is cropped. The Android artwork
+is instead rendered from the Icon Composer `glyph.png` by `vp run icons:export:android`:
 
-- `apps/mobile/assets/android-icon-foreground.png`: the shared transparent wordmark, sized to stay
+- `apps/mobile/assets/android-icon-foreground.png`: the shared transparent chevron, sized to stay
   inside the safe zone
-- `apps/mobile/assets/android-icon-background-dev.png` and `-nightly.png`: full-bleed variant
-  artwork (blueprint grid and annotations; night sky and clouds). Production uses a solid color.
+- `apps/mobile/assets/android-icon-background-dev.png` and `-nightly.png`: charcoal full-bleed
+  plates (`#0b0b0b`). Production uses the same solid color in `app.config.ts`.
 - `apps/mobile/assets/android-splash-icon-*.png`: the two layers composed into one 288dp image, so
   the splash mask reproduces the launcher icon's framing.
 
-Rerun the export after changing a layer SVG. `android-icon-mark.png` remains a flat silhouette for
+Rerun the export after changing `glyph.png`. `android-icon-mark.png` remains a flat silhouette for
 Android's monochrome themed icon.
