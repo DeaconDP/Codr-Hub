@@ -12,6 +12,7 @@ import {
   HubError,
   MessageId,
   ProjectId,
+  ThreadId,
   type HubAutonomy,
   type HubDeleteProjectInput,
   type HubGitGlance,
@@ -62,6 +63,7 @@ import { mergeDeezImport, readDeezProjects, slugifyProjectName } from "./deezImp
 import { GIT_GLANCE_ARGS, parseGitGlance } from "./gitGlance.ts";
 import { computePace, type PaceDecision } from "./pacing.ts";
 import * as Store from "./portfolioStore.ts";
+import * as Quota from "./quotaOwnership.ts";
 import {
   buildAutopilotPrompt,
   ineligibleReason,
@@ -123,6 +125,8 @@ const isSettled = (shell: OrchestrationV2ThreadShell) =>
   (shell.settledOverride !== "active" && shell.settledAt !== null);
 
 const providerLabel = (provider: ServerProvider) => provider.displayName ?? provider.driver;
+const quotaGroup = (provider: ServerProvider) =>
+  Quota.accountKey(provider) ?? `instance:${provider.instanceId}`;
 
 const isUsable = (provider: ServerProvider) =>
   provider.enabled &&
@@ -186,18 +190,23 @@ export const layer = Layer.effect(
     const projectsRef = yield* Ref.make<ReadonlyMap<string, HubProject>>(
       new Map(initial.projects.map((project) => [project.id, project])),
     );
-    const nodeRef = yield* Ref.make(
-      yield* io(Store.readNodeFile(paths)).pipe(
-        Effect.catch((cause) =>
-          Effect.logError("Codr-Hub node file unreadable; using defaults", { cause }).pipe(
-            Effect.as<Store.NodeFile>({
-              nodeName: Store.defaultNodeName(),
-              autopilotEnabled: false,
-              ledger: [],
-            }),
-          ),
-        ),
-      ),
+    const initialNode = yield* io(Store.readNodeFile(paths)).pipe(Effect.result);
+    const nodeReadError =
+      initialNode._tag === "Failure"
+        ? new HubError({
+            message:
+              "Autopilot is paused. Repair codr-hub/node.json and restart before pacing or handing over ownership.",
+            cause: initialNode.failure,
+          })
+        : null;
+    if (nodeReadError !== null)
+      yield* Effect.logError("Codr-Hub node file unreadable; autopilot paused", {
+        cause: nodeReadError,
+      });
+    const nodeRef = yield* Ref.make<Store.NodeFile>(
+      initialNode._tag === "Success"
+        ? initialNode.success
+        : { nodeName: Store.defaultNodeName(), autopilotEnabled: false, ledger: [] },
     );
     const glancesRef = yield* Ref.make<ReadonlyMap<string, HubGitGlance | null>>(new Map());
     const existsRef = yield* Ref.make<ReadonlyMap<string, boolean>>(new Map());
@@ -209,6 +218,17 @@ export const layer = Layer.effect(
     const timersRef = yield* Ref.make({ autopilot: 0, glance: 0, sync: 0, refresh: 0 });
     const writeLock = yield* Semaphore.make(1);
     const autopilotLock = yield* Semaphore.make(1);
+    const quotaNodeId = yield* io(
+      Quota.nodeIdentity(paths).pipe(Effect.provideService(Crypto.Crypto, crypto)),
+    ).pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Codr-Hub quota identity unavailable", { cause }).pipe(Effect.as(null)),
+      ),
+    );
+    const quotaRef = yield* Ref.make<ReadonlyMap<string, { allowed: boolean; reason: string }>>(
+      new Map(),
+    );
+    const releaseQuotaPending = yield* Ref.make(true);
     const changes = yield* PubSub.sliding<void>(1);
     const notify = PubSub.publish(changes, undefined).pipe(Effect.asVoid);
 
@@ -253,23 +273,32 @@ export const layer = Layer.effect(
     // --- snapshot ------------------------------------------------------------
 
     const ledgerState = Effect.gen(function* () {
+      if (nodeReadError !== null) return yield* nodeReadError;
       const node = yield* Ref.get(nodeRef);
       const shells = yield* threadManagement.getShellSnapshot().pipe(
         Effect.map(
           (snapshot) =>
             new Map<string, OrchestrationV2ThreadShell>(
-              snapshot.threads.map((shell) => [shell.id, shell]),
+              [...snapshot.threads, ...snapshot.archivedThreads].map((shell) => [shell.id, shell]),
             ),
         ),
-        Effect.orElseSucceed(() => new Map<string, OrchestrationV2ThreadShell>()),
+        Effect.mapError(
+          (cause) =>
+            new HubError({
+              message: "Could not verify autopilot thread state; pacing is paused.",
+              cause,
+            }),
+        ),
       );
       const records = node.ledger.map((record) => {
         const shell = shells.get(record.threadId);
         return {
           record,
-          running: shell !== undefined && shell.activeRunId !== null,
+          running:
+            shell !== undefined &&
+            (shell.activeRunId !== null || (shell.pendingBackgroundTasks?.length ?? 0) > 0),
           // Archived or deleted threads drop out of the active snapshot.
-          awaiting: shell !== undefined && !isSettled(shell),
+          awaiting: shell !== undefined && shell.archivedAt === null && !isSettled(shell),
         };
       });
       return { node, records };
@@ -300,6 +329,17 @@ export const layer = Layer.effect(
       const { records } = yield* ledgerState;
       const now = yield* nowMs;
       const list = yield* providers.getProviders;
+      const groups = new Map(list.map((provider) => [provider.instanceId, quotaGroup(provider)]));
+      const runningByGroup = new Map<string, number>();
+      let unknownRunning = 0;
+      for (const entry of records) {
+        if (!entry.running) continue;
+        const group = entry.record.quotaAccountKey ?? groups.get(entry.record.instanceId);
+        // Older ledgers have no account key. If their instance is gone, count
+        // them against every account until their work finishes.
+        if (group === undefined) unknownRunning += 1;
+        else runningByGroup.set(group, (runningByGroup.get(group) ?? 0) + 1);
+      }
       return list
         .filter((provider) => provider.enabled)
         .map((provider) => ({
@@ -312,12 +352,19 @@ export const layer = Layer.effect(
               usable: isUsable(provider),
               windows: provider.usageLimits?.unavailable
                 ? []
-                : (provider.usageLimits?.windows ?? []),
+                : list
+                    .filter(
+                      (other) =>
+                        other.enabled &&
+                        groups.get(other.instanceId) === groups.get(provider.instanceId),
+                    )
+                    .flatMap((other) =>
+                      other.usageLimits?.unavailable ? [] : (other.usageLimits?.windows ?? []),
+                    )
+                    .toSorted((a, b) => b.usedPercent - a.usedPercent),
               bankedResets: provider.usageLimits?.resetCredits?.availableCount ?? 0,
               bankedResetExpiresAt: provider.usageLimits?.resetCredits?.nextExpiresAt ?? null,
-              running: records.filter(
-                (entry) => entry.running && entry.record.instanceId === provider.instanceId,
-              ).length,
+              running: (runningByGroup.get(groups.get(provider.instanceId)!) ?? 0) + unknownRunning,
             },
             {
               targetPercent: hub.settings.paceTargetPercent,
@@ -332,7 +379,18 @@ export const layer = Layer.effect(
     const buildSnapshot = Effect.gen(function* () {
       const hub = yield* Ref.get(hubRef);
       const { node, views } = yield* buildViews;
-      const pace: HubPace[] = (yield* paceDecisions).map(({ decision }) => decision.pace);
+      const quota = yield* Ref.get(quotaRef);
+      const pace: HubPace[] = (yield* paceDecisions).map(({ provider, decision }) => {
+        const status = quota.get(quotaGroup(provider));
+        return status === undefined
+          ? decision.pace
+          : {
+              ...decision.pace,
+              state: status.allowed ? decision.pace.state : "unavailable",
+              desiredConcurrency: status.allowed ? decision.pace.desiredConcurrency : 0,
+              reason: status.allowed ? `${decision.pace.reason} ${status.reason}` : status.reason,
+            };
+      });
       const sync = yield* Ref.get(syncRef);
       const deezPath = deezProjectManagerFile(path, platform);
       return {
@@ -369,19 +427,16 @@ export const layer = Layer.effect(
 
     // --- writes --------------------------------------------------------------
 
-    /** Serialises every portfolio write and commits it with `message`. */
+    /** Callers hold writeLock while reading the current snapshot and saving it. */
     const write = <A>(message: string, effect: Effect.Effect<A, HubError>) =>
-      writeLock
-        .withPermits(1)(
-          Effect.gen(function* () {
-            const result = yield* effect;
-            yield* io(Store.commitPortfolio(paths, message)).pipe(
-              Effect.catch((cause) => Effect.logWarning("Codr-Hub commit failed", { cause })),
-            );
-            return result;
-          }),
-        )
-        .pipe(Effect.tap(() => notify));
+      Effect.gen(function* () {
+        yield* io(Store.ensurePortfolioIdle(paths));
+        const result = yield* effect;
+        yield* io(Store.commitPortfolio(paths, message)).pipe(
+          Effect.catch((cause) => Effect.logWarning("Codr-Hub commit failed", { cause })),
+        );
+        return result;
+      }).pipe(Effect.tap(() => notify));
 
     const saveProject = (project: HubProject) =>
       io(Store.writeProject(paths, project)).pipe(
@@ -392,6 +447,7 @@ export const layer = Layer.effect(
 
     const saveNode = (update: (node: Store.NodeFile) => Store.NodeFile) =>
       Effect.gen(function* () {
+        if (nodeReadError !== null) return yield* nodeReadError;
         const next = update(yield* Ref.get(nodeRef));
         yield* io(Store.writeNodeFile(paths, next));
         yield* Ref.set(nodeRef, next);
@@ -449,7 +505,7 @@ export const layer = Layer.effect(
         yield* write(`${existing ? "Update" : "Add"} ${next.name}`, saveProject(next));
         if (localPath !== undefined) yield* refreshGlances.pipe(Effect.andThen(notify));
         return OK;
-      });
+      }).pipe(writeLock.withPermits(1));
 
     const deleteProject: CodrHubService["Service"]["deleteProject"] = (input) =>
       Effect.gen(function* () {
@@ -468,7 +524,7 @@ export const layer = Layer.effect(
           ),
         );
         return OK;
-      });
+      }).pipe(writeLock.withPermits(1));
 
     const setStrategy: CodrHubService["Service"]["setStrategy"] = (input) =>
       Effect.gen(function* () {
@@ -482,7 +538,7 @@ export const layer = Layer.effect(
           io(Store.writeHubFile(paths, next)).pipe(Effect.andThen(Ref.set(hubRef, next))),
         );
         return OK;
-      });
+      }).pipe(writeLock.withPermits(1));
 
     const updateSettings: CodrHubService["Service"]["updateSettings"] = (input) =>
       Effect.gen(function* () {
@@ -496,10 +552,11 @@ export const layer = Layer.effect(
           io(Store.writeHubFile(paths, next)).pipe(Effect.andThen(Ref.set(hubRef, next))),
         );
         return OK;
-      });
+      }).pipe(writeLock.withPermits(1));
 
     const setNode: CodrHubService["Service"]["setNode"] = (input) =>
       Effect.gen(function* () {
+        if (nodeReadError !== null) return yield* nodeReadError;
         const before = yield* Ref.get(nodeRef);
         const rename =
           input.nodeName !== undefined && input.nodeName !== before.nodeName
@@ -524,12 +581,13 @@ export const layer = Layer.effect(
           nodeName: rename ?? node.nodeName,
           autopilotEnabled: input.autopilotEnabled ?? node.autopilotEnabled,
         }));
-        if (input.autopilotEnabled === true) {
+        if (input.autopilotEnabled !== undefined) {
           yield* Ref.update(timersRef, (timers) => ({ ...timers, autopilot: 0 }));
+          yield* Ref.set(releaseQuotaPending, true);
         }
         yield* notify;
         return OK;
-      });
+      }).pipe(writeLock.withPermits(1), autopilotLock.withPermits(1));
 
     const importProjects: CodrHubService["Service"]["importProjects"] = (input) =>
       Effect.gen(function* () {
@@ -561,33 +619,66 @@ export const layer = Layer.effect(
           yield* refreshGlances.pipe(Effect.andThen(notify));
         }
         return { imported: merged.imported, updated: merged.updated, skipped: merged.skipped };
-      });
+      }).pipe(writeLock.withPermits(1));
 
-    const runSync = Effect.gen(function* () {
-      const remote = yield* io(Store.readRemote(paths));
-      if (remote === null) return;
-      const result = yield* writeLock
-        .withPermits(1)(io(Store.syncPortfolio(paths)))
-        .pipe(Effect.result);
-      const now = yield* nowIso;
-      if (result._tag === "Failure") {
-        yield* Ref.update(syncRef, (sync) => ({ ...sync, lastError: result.failure.message }));
-      } else {
-        const reloaded = yield* loadFromDisk;
-        yield* Ref.set(hubRef, reloaded.hub);
-        yield* Ref.set(
-          projectsRef,
-          new Map(reloaded.projects.map((project) => [project.id, project])),
+    const runSync = (input: HubSyncInput = {}) =>
+      Effect.gen(function* () {
+        if (input.remote !== undefined && input.remote !== (yield* io(Store.readRemote(paths)))) {
+          const { node, records } = yield* ledgerState;
+          if (node.autopilotEnabled || records.some((entry) => entry.running || entry.awaiting)) {
+            return yield* new HubError({
+              message:
+                "Turn off Autopilot and settle or archive its finished threads before changing the portfolio remote.",
+            });
+          }
+          if ((yield* io(Store.readRemote(paths))) !== null) {
+            if (quotaNodeId === null)
+              return yield* new HubError({
+                message: "Repair this node's quota identity before changing the portfolio remote.",
+              });
+            yield* io(Quota.releaseOwned(paths, quotaNodeId));
+          }
+          yield* Ref.set(quotaRef, new Map());
+          yield* Ref.set(releaseQuotaPending, true);
+          yield* io(Store.setRemote(paths, input.remote));
+        }
+        const remote = yield* io(Store.readRemote(paths));
+        if (remote === null) {
+          yield* Ref.set(syncRef, { lastSyncAt: null, lastError: null });
+          yield* notify;
+          return;
+        }
+        const result = yield* io(Store.syncPortfolio(paths)).pipe(Effect.result);
+        // A pull can succeed before a push fails. Keep queued edits based on
+        // the disk state in that case too, without reading a manual git conflict.
+        const reloaded = yield* io(Store.ensurePortfolioIdle(paths)).pipe(
+          Effect.andThen(loadFromDisk),
+          Effect.result,
         );
-        yield* Ref.set(syncRef, { lastSyncAt: now, lastError: null });
-      }
-      yield* notify;
-    });
+        if (reloaded._tag === "Success") {
+          yield* Ref.set(hubRef, reloaded.success.hub);
+          yield* Ref.set(
+            projectsRef,
+            new Map(reloaded.success.projects.map((project) => [project.id, project])),
+          );
+        }
+        const error =
+          result._tag === "Failure"
+            ? result.failure.message
+            : reloaded._tag === "Failure"
+              ? reloaded.failure.message
+              : null;
+        if (error !== null) {
+          yield* Ref.update(syncRef, (sync) => ({ ...sync, lastError: error }));
+        } else {
+          yield* Ref.set(syncRef, { lastSyncAt: yield* nowIso, lastError: null });
+        }
+        yield* notify;
+      }).pipe(writeLock.withPermits(1));
 
     const sync: CodrHubService["Service"]["sync"] = (input) =>
       Effect.gen(function* () {
-        if (input.remote !== undefined) yield* io(Store.setRemote(paths, input.remote));
-        yield* runSync;
+        yield* runSync(input);
         const state = yield* Ref.get(syncRef);
         return {
           portfolioPath: paths.portfolioDir,
@@ -595,9 +686,85 @@ export const layer = Layer.effect(
           lastSyncAt: state.lastSyncAt,
           lastError: state.lastError,
         };
-      });
+      }).pipe(autopilotLock.withPermits(1));
 
     // --- autopilot -----------------------------------------------------------
+
+    const verifyQuota = (provider: ServerProvider) =>
+      Effect.gen(function* () {
+        if ((yield* io(Store.readRemote(paths))) === null) return true;
+        const key = Quota.accountKey(provider);
+        let status: { allowed: boolean; reason: string };
+        if (quotaNodeId === null) {
+          status = {
+            allowed: false,
+            reason: "Quota coordination is unavailable: repair this node's quota identity.",
+          };
+        } else if (key === null) {
+          status = {
+            allowed: false,
+            reason:
+              "Shared pacing needs an authenticated account email from this provider. Sign in or use this provider on a local-only node.",
+          };
+        } else {
+          const node = yield* Ref.get(nodeRef);
+          const owner = yield* io(
+            Quota.claim(paths, key, { version: 1, nodeId: quotaNodeId, nodeName: node.nodeName }),
+          ).pipe(Effect.result);
+          status =
+            owner._tag === "Failure"
+              ? { allowed: false, reason: owner.failure.message }
+              : owner.success.nodeId === quotaNodeId
+                ? { allowed: true, reason: `Pacing owner: ${node.nodeName}.` }
+                : {
+                    allowed: false,
+                    reason: `Pacing is owned by ${owner.success.nodeName}. Turn off its Autopilot and drain its threads to hand over.`,
+                  };
+          yield* Ref.set(releaseQuotaPending, true);
+        }
+        yield* Ref.update(quotaRef, (current) =>
+          new Map(current).set(quotaGroup(provider), status),
+        );
+        return status.allowed;
+      }).pipe(writeLock.withPermits(1));
+
+    const releaseQuotaWhenIdle = autopilotLock.withPermits(1)(
+      Effect.gen(function* () {
+        if (!(yield* Ref.get(releaseQuotaPending))) return;
+        const { node, records } = yield* ledgerState;
+        if (node.autopilotEnabled) return;
+        if (records.some((entry) => entry.running || entry.awaiting)) {
+          yield* Ref.set(
+            noteRef,
+            "Autopilot is off. Pacing ownership stays here until its threads finish and are settled or archived.",
+          );
+          yield* notify;
+          return;
+        }
+        const result = yield* writeLock
+          .withPermits(1)(
+            Effect.gen(function* () {
+              if ((yield* io(Store.readRemote(paths))) === null) return 0;
+              if (quotaNodeId === null)
+                return yield* new HubError({
+                  message:
+                    "Could not release pacing ownership: this node's quota identity is unavailable.",
+                });
+              return yield* io(Quota.releaseOwned(paths, quotaNodeId));
+            }),
+          )
+          .pipe(Effect.result);
+        if (result._tag === "Failure") {
+          yield* Ref.set(noteRef, result.failure.message);
+        } else {
+          yield* Ref.set(releaseQuotaPending, false);
+          yield* Ref.set(quotaRef, new Map());
+          if (result.success > 0)
+            yield* Ref.set(noteRef, "Pacing ownership released. Another node can now take over.");
+        }
+        yield* notify;
+      }),
+    );
 
     const resolveT3Project = (hubProject: HubProject, workspaceRoot: string) =>
       Effect.gen(function* () {
@@ -633,10 +800,43 @@ export const layer = Layer.effect(
         }
         const id = yield* uuid;
         const now = yield* nowIso;
+        const record: Store.NodeLaunchRecord = {
+          threadId: ThreadId.make(`codr-hub:${id}`),
+          hubProjectId: project.id,
+          t3ProjectId: t3Project.id,
+          instanceId: provider.instanceId,
+          quotaAccountKey: Quota.accountKey(provider) ?? undefined,
+          stage: project.stage,
+          autonomy,
+          launchedAt: now,
+        };
+        const { records } = yield* ledgerState;
+        const retained = new Set(
+          records
+            .filter((entry) => entry.running || entry.awaiting)
+            .map((entry) => entry.record.threadId),
+        );
+        // Persist before dispatch: a lost launch reply must not let another
+        // node take ownership while the launched thread is still running.
+        yield* saveNode((node) => {
+          const recent = new Set(
+            node.ledger.slice(-(LEDGER_LIMIT - 1)).map((entry) => entry.threadId),
+          );
+          return {
+            ...node,
+            ledger: [
+              ...node.ledger.filter(
+                (entry) => retained.has(entry.threadId) || recent.has(entry.threadId),
+              ),
+              record,
+            ],
+          };
+        });
         const strategyTitle =
           hub.strategy.find((priority) => priority.id === project.strategyId)?.title ?? null;
-        const result = yield* threadLaunch.launch({
+        yield* threadLaunch.launch({
           commandId: CommandId.make(`codr-hub:launch:${id}`),
+          threadId: record.threadId,
           projectId: t3Project.id,
           title: `Autopilot: ${project.name} (${stageLabel(project.stage, hub.settings.sdlcMode)})`,
           modelSelection,
@@ -662,19 +862,6 @@ export const layer = Layer.effect(
           createdBy: "system",
           creationSource: "server",
         });
-        const record: HubLaunchRecord = {
-          threadId: result.threadId,
-          hubProjectId: project.id,
-          t3ProjectId: t3Project.id,
-          instanceId: provider.instanceId,
-          stage: project.stage,
-          autonomy,
-          launchedAt: now,
-        };
-        yield* saveNode((node) => ({
-          ...node,
-          ledger: [...node.ledger, record].slice(-LEDGER_LIMIT),
-        }));
         return record;
       }).pipe(
         Effect.mapError((cause) =>
@@ -697,11 +884,26 @@ export const layer = Layer.effect(
           const notes: string[] = [];
           const launched: HubLaunchRecord[] = [];
           const decisions = yield* paceDecisions;
+          const granted = new Set<string>();
+          const permit = (provider: ServerProvider) =>
+            Effect.gen(function* () {
+              const group = quotaGroup(provider);
+              if (granted.has(group)) return true;
+              const allowed = yield* verifyQuota(provider);
+              if (allowed) granted.add(group);
+              else notes.push((yield* Ref.get(quotaRef)).get(group)!.reason);
+              return allowed;
+            });
 
+          const resets = new Set<string>();
           for (const { provider, decision } of decisions) {
             if (!decision.deployBankedReset) continue;
+            const group = quotaGroup(provider);
+            if (resets.has(group)) continue;
+            resets.add(group);
             const instance = yield* instances.getInstance(provider.instanceId);
             if (!instance?.consumeResetCredit) continue;
+            if (!(yield* permit(provider))) continue;
             const outcome = yield* instance.consumeResetCredit().pipe(Effect.result);
             notes.push(
               outcome._tag === "Success"
@@ -729,8 +931,18 @@ export const layer = Layer.effect(
             );
           }
           const tried = new Set<string>();
+          const accounts = new Set<string>();
           outer: for (const { provider, decision } of candidates) {
+            const group = quotaGroup(provider);
+            if (accounts.has(group)) continue;
+            accounts.add(group);
             let slots = force ? 1 : order(decision);
+            if (slots <= 0 || budget <= 0) continue;
+            if (pickNextProject(views, hub.strategy, tried) === null) {
+              notes.push("No eligible project.");
+              break;
+            }
+            if (!(yield* permit(provider))) continue;
             while (slots > 0 && budget > 0) {
               const view = pickNextProject(views, hub.strategy, tried);
               if (view === null) {
@@ -746,7 +958,9 @@ export const layer = Layer.effect(
               const result = yield* launch(view, provider).pipe(Effect.result);
               if (result._tag === "Failure") {
                 notes.push(result.failure.message);
-                continue;
+                // A failed reply can follow a committed dispatch. Recheck
+                // durable thread state next pass before spending more slots.
+                break outer;
               }
               launched.push(result.success);
               notes.push(`Launched ${view.project.name} on ${providerLabel(provider)}.`);
@@ -779,14 +993,15 @@ export const layer = Layer.effect(
         yield* Ref.update(timersRef, (t) => ({ ...t, refresh: now }));
         yield* notify;
       }
-      if (node.autopilotEnabled && now - timers.autopilot >= AUTOPILOT_EVERY_MS) {
+      if (now - timers.autopilot >= AUTOPILOT_EVERY_MS) {
         yield* Ref.update(timersRef, (t) => ({ ...t, autopilot: now }));
         // Launch failures are collected as notes inside the pass.
-        yield* autopilotPass(false);
+        if (node.autopilotEnabled) yield* autopilotPass(false);
+        else yield* releaseQuotaWhenIdle;
       }
       if (now - timers.sync >= SYNC_EVERY_MS) {
         yield* Ref.update(timersRef, (t) => ({ ...t, sync: now }));
-        yield* runSync.pipe(
+        yield* runSync().pipe(
           Effect.catch((cause) => Effect.logWarning("Codr-Hub sync failed", { cause })),
         );
       }

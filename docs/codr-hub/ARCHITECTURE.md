@@ -24,6 +24,9 @@ Upstream T3 Code lands about 40 commits a day. Every line we change in an upstre
 | `apps/web/src/components/sidebar/mainAppLocation.ts` | `/hub` counts as a utility page                                                       |
 | `apps/web/src/routeTree.gen.ts`                      | Generated; regenerates on build                                                       |
 | `AGENTS.md`                                          | Codr-Hub section at the end                                                           |
+| `README.md`                                          | One-click `run.command` / `run.bat` note after `vp i`                                 |
+| `docs/operations/development.md`                     | One-click launcher paragraph (sticky 5733 / 13773)                                    |
+| `apps/mobile/app.config.ts`                          | `T3CODE_IOS_APPLE_TEAM_ID` plus existing personal-team bundle/capability path         |
 
 ### Syncing upstream
 
@@ -43,13 +46,15 @@ The portfolio is a directory of JSON files that is also a git repo:
   hub.json                         strategy priorities (ordered) + shared hub settings
   projects/<id>.json               one file per project, so mesh edits rarely conflict
 <T3 state dir>/codr-hub/node.json  this node only: node name, autopilot on/off, launch ledger
+<T3 state dir>/codr-hub/quota-node-id  stable identity for pacing ownership on this node
 ```
 
 `<T3 state dir>` is `~/.t3/userdata` for an installed server, and `<home-dir>/userdata` for a dev server started with `--home-dir`.
 
 - One file per project is deliberate. Two nodes editing different projects never conflict in git.
-- `node.json` is never synced, because autopilot state and the launch ledger are per node.
-- Each write commits locally. If a remote is configured, `sync` does `pull --rebase` then `push`. A conflict is reported to the user and never auto-resolved.
+- `node.json` and `quota-node-id` are never synced. Preserve both on restart; do not copy them to another node. The ledger retains running or unreviewed threads beyond its recent-history limit, and pins each launch to its account even when provider instances change. An unreadable ledger blocks pacing and ownership release until repaired.
+- Each write commits locally. If a remote is configured, `sync` does `pull --rebase` then `push`, retrying a competing push up to three attempts. A conflict restores the local branch and is reported to the user; neither node's edits are auto-resolved. Uncommitted edits or a manual git operation block sync.
+- Portfolio mutations and sync share one lock through snapshot reload. Read the current snapshot after acquiring that lock, or a queued edit can overwrite fields just pulled from another node.
 - A project's local checkout is keyed by node name: `hosts: { "Steve": { path } }`. A path from one machine means nothing on another.
 - A portfolio project is **not** a T3 project. T3 projects are local to one environment. The hub links them at runtime by matching `hosts[thisNode].path` to a T3 project's workspace root, and creates the T3 project when the autopilot first needs it.
 
@@ -58,14 +63,14 @@ The portfolio is a directory of JSON files that is also a git repo:
 The autopilot is a T3 `Scheduler` source on each server. Every tick it does the following:
 
 1. Reads usage windows and banked resets from `ProviderRegistry.getProviders`. These are T3's existing probes, so there is no new scraping.
-2. Works out a **pace** per provider instance in `codrHub/pacing.ts`, a pure function:
+2. Works out a **pace** in `codrHub/pacing.ts`, a pure function. Local instances of the same provider/account share usage windows and running counts:
    - The target curve reaches 95% (configurable) at the window's reset. It is convex, so the push grows as the reset nears.
-   - The binding window is the one closest to the reset that is still under its target.
+   - The longest window sets the budget curve; shorter windows can cap spending.
    - Any window at or above the cap pauses that provider until it resets.
    - Banked resets add capacity. They are only auto-deployed if the owner turns that on, and only when a credit would otherwise expire unused.
 3. Picks work in `codrHub/selection.ts`, also a pure function. Eligible projects are active, have autonomy above 0%, have a path on this node, and are under their review budget. They are ranked by strategy order, then priority, then manual order.
-4. Launches a thread through T3's `ThreadLaunchService`, the same path scheduled tasks use. The prompt comes from the project's SDLC stage template. Agents work from the project's own `TODO.md`/`ROADMAP.md` when present.
-5. Records the launch in the node ledger. A launched thread counts against the review budget until it is settled or archived.
+4. Verifies account ownership on the portfolio remote before launching or automatically redeeming a reset. Run once uses the same gate.
+5. Reserves a thread ID in the node ledger before dispatching through T3's `ThreadLaunchService`, so a lost reply cannot hide running work. The prompt comes from the project's SDLC stage template. A thread counts against the review budget until settled or archived; archived running or background work still prevents ownership release.
 
 ### Autonomy ladder
 
@@ -83,4 +88,10 @@ The prompt states the level's limits, but the runtime settings above are what ac
 
 ## Mesh
 
-Every node runs its own T3 server and its own autopilot, and the portfolio repo keeps them in agreement. Quota is per account, not per node. v0.1 does not coordinate quota across nodes, so enable the autopilot on one node per account. Clients reach any node over Tailscale (`t3 serve --tailscale-serve`, or `vp run dev --share` in dev).
+Every node runs its own T3 server and autopilot. Clients reach any node over Tailscale (`t3 serve --tailscale-serve`, or `vp run dev --share` in dev). Portfolio sync and pacing coordination use the existing private git remote; they do not require a new mesh service.
+
+All nodes sharing a subscription must run the ownership-aware version and use the same portfolio remote. Account identity is the hash of provider driver and normalized authenticated email, independent of instance IDs. Providers without that identity cannot pace with a remote configured. With no remote, pacing remains local and has no cross-node guarantee. This coordinates Hub launches and automatic resets, not manually started agents or manual reset redemption.
+
+Ownership lives on `refs/heads/codr-hub-quota/<account hash>`, outside `main`, with only a version, stable node ID, and display name. Atomic creation uses an explicit empty-ref lease; release uses the observed object ID as a lease. Never replace an existing owner or delete a ref without that comparison. Local `refs/codr-hub-quota/<remote hash>/<account hash>` record claim intent before a push, so even a lost push reply can be recovered and released after restart. Preserve these local refs with the portfolio repository.
+
+Owners do not expire. Launches pause if the remote cannot verify ownership. Turning Autopilot off releases this node's claims on a subsequent minute tick only after its launched work is finished and settled or archived. Thread-state failures block release. Changing the remote uses the same drain requirement and releases claims on the old remote first. An offline owner must be recovered for normal handover; automatic timeout takeover would permit paused work to resume alongside another owner.

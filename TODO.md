@@ -1,6 +1,6 @@
 # Codr-Hub TODO
 
-Active work for epic E1 (v0.1). Check items off as they land. Deferred items go to [ROADMAP.md](ROADMAP.md#deferred).
+Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land. Deferred items go to [ROADMAP.md](ROADMAP.md#deferred).
 
 ## Step 4: Brief & docs
 
@@ -42,3 +42,29 @@ Active work for epic E1 (v0.1). Check items off as they land. Deferred items go 
 - [x] Create the private portfolio repo: `DeaconDP/codr-hub-portfolio`, seeded with the 22 imported projects
 - [ ] On each node: set Portfolio git remote to `https://github.com/DeaconDP/codr-hub-portfolio.git`, then Save & sync
 - [ ] Decide: Deploy reset by hand on Codex (2 banked) when it next caps
+
+## E2: Mesh sync hardening
+
+- [x] Retry competing portfolio pushes without overwriting another node's commits
+- [x] Preserve local edits and manual git operations when sync cannot proceed
+- [x] Serialize portfolio mutations with sync and snapshot reload, including a failed push after a successful pull
+- [x] Focused multi-node git and service concurrency tests (15 passed), server typecheck, targeted lint
+- [ ] Owner: verify Save & sync on each real mesh node
+
+## E2: Shared subscription pacing
+
+- [x] Atomic account ownership through the portfolio remote, with a stable local node identity
+- [x] Gate launches, Run once, and automatic banked resets on verified ownership
+- [x] Share local account concurrency across provider instances; show ownership and blocked reasons
+- [x] Release ownership after Autopilot is off and its threads have drained; preserve ownership across restart/offline
+- [x] Focused multi-node ownership and autopilot integration tests (16 new tests; 52 Hub tests passed), server typecheck, targeted lint
+- [ ] Owner: verify one pacing owner and handover between real mesh nodes on the same subscription
+
+## Dev launcher
+
+- [x] One-click `run.command` / `run.bat` (Node 24, `vp i`, sticky http://localhost:5733)
+
+## Next engineering slice
+
+- [x] E2: merge the Hub project view across connected environments
+- [ ] E9: performant agent-task micro-animations (policy note → Hub running shine → chat stage cues). See [ROADMAP.md](ROADMAP.md) E9. After the E2 mesh Hub view unless Dale pulls it forward.

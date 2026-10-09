@@ -239,6 +239,89 @@ export const HubSnapshot = Schema.Struct({
 });
 export type HubSnapshot = typeof HubSnapshot.Type;
 
+/**
+ * One reporting node's derived checkout. `HubProjectView` stays this shape;
+ * mesh UI overlays several of these under a shared `HubProject`.
+ */
+export type HubNodeCheckout = {
+  readonly nodeName: string;
+  readonly localPath: string | null;
+  readonly pathExists: boolean;
+  readonly git: HubGitGlance | null;
+  readonly awaitingReview: number;
+  readonly running: number;
+  readonly lastLaunchAt: string | null;
+};
+
+/** Client-side union of live Hub rows. Not on the wire. */
+export type HubMergedProjectView = {
+  readonly project: HubProject;
+  readonly nodes: ReadonlyArray<HubNodeCheckout>;
+};
+
+/**
+ * Union by `project.id`. Overlay path/git/running/pathExists per `snapshot.nodeName`.
+ * Shared `HubProject` is one record; if clones disagree, pick latest `updatedAt`
+ * (ties keep the first snapshot's record). Later snapshots overwrite the same
+ * nodeName. Autopilot eligibility is still this-node: do not treat another
+ * host's checkout as making the selected environment eligible.
+ */
+export function mergeHubProjectViews(
+  snapshots: ReadonlyArray<HubSnapshot>,
+): HubMergedProjectView[] {
+  const byId = new Map<string, { project: HubProject; nodes: Map<string, HubNodeCheckout> }>();
+  for (const snapshot of snapshots) {
+    for (const view of snapshot.projects) {
+      const existing = byId.get(view.project.id);
+      const nodes = existing?.nodes ?? new Map<string, HubNodeCheckout>();
+      nodes.set(snapshot.nodeName, {
+        nodeName: snapshot.nodeName,
+        localPath: view.localPath,
+        pathExists: view.pathExists,
+        git: view.git,
+        awaitingReview: view.awaitingReview,
+        running: view.running,
+        lastLaunchAt: view.lastLaunchAt,
+      });
+      const project =
+        existing === undefined || view.project.updatedAt > existing.project.updatedAt
+          ? view.project
+          : existing.project;
+      byId.set(view.project.id, { project, nodes });
+    }
+  }
+  return [...byId.values()].map((entry) => ({
+    project: entry.project,
+    nodes: [...entry.nodes.values()],
+  }));
+}
+
+export function hubProjectViewForNode(
+  merged: HubMergedProjectView,
+  nodeName: string,
+): HubProjectView {
+  const node = merged.nodes.find((entry) => entry.nodeName === nodeName);
+  return {
+    project: merged.project,
+    localPath: node?.localPath ?? null,
+    pathExists: node?.pathExists ?? false,
+    git: node?.git ?? null,
+    awaitingReview: node?.awaitingReview ?? 0,
+    running: node?.running ?? 0,
+    lastLaunchAt: node?.lastLaunchAt ?? null,
+  };
+}
+
+export function mergedProjectLastLaunchAt(merged: HubMergedProjectView): string | null {
+  let best: string | null = null;
+  for (const node of merged.nodes) {
+    if (node.lastLaunchAt !== null && (best === null || node.lastLaunchAt > best)) {
+      best = node.lastLaunchAt;
+    }
+  }
+  return best;
+}
+
 export const HubSubscribeInput = Schema.Struct({});
 export type HubSubscribeInput = typeof HubSubscribeInput.Type;
 

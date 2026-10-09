@@ -1,4 +1,4 @@
-import type { HubProject, HubProjectView } from "@t3tools/contracts";
+import type { HubMergedProjectView, HubProject } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { filterAndSortProjects, newStrategyId, stageOptions, stageSelectValue } from "./hubFormat";
@@ -6,7 +6,7 @@ import { filterAndSortProjects, newStrategyId, stageOptions, stageSelectValue } 
 const view = (
   overrides: Partial<HubProject>,
   lastLaunchAt: string | null = null,
-): HubProjectView => ({
+): HubMergedProjectView => ({
   project: {
     id: "p",
     name: "P",
@@ -28,12 +28,20 @@ const view = (
     updatedAt: "2026-10-01T00:00:00.000Z",
     ...overrides,
   },
-  localPath: null,
-  pathExists: false,
-  git: null,
-  awaitingReview: 0,
-  running: 0,
-  lastLaunchAt,
+  nodes:
+    lastLaunchAt === null
+      ? []
+      : [
+          {
+            nodeName: "local",
+            localPath: null,
+            pathExists: false,
+            git: null,
+            awaitingReview: 0,
+            running: 0,
+            lastLaunchAt,
+          },
+        ],
 });
 
 const views = [
@@ -42,7 +50,7 @@ const views = [
   view({ id: "c", name: "Charlie", status: "done" }, "2026-10-05T00:00:00.000Z"),
   view({ id: "d", name: "Delta", archived: true }),
 ];
-const ids = (list: HubProjectView[]) => list.map((entry) => entry.project.id);
+const ids = (list: HubMergedProjectView[]) => list.map((entry) => entry.project.id);
 const base = { query: "", sort: "rank" as const, strategy: [{ id: "s1", title: "S", notes: "" }] };
 
 describe("hub project list", () => {

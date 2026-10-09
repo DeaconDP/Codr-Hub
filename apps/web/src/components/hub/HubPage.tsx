@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { PlayIcon } from "lucide-react";
 import { useState } from "react";
@@ -27,7 +28,7 @@ import { HubSettingsPanel } from "./HubSettingsPanel";
 import { HubStrategyPanel } from "./HubStrategyPanel";
 import { useHubAction } from "./useHubAction";
 
-/** Codr-Hub: the portfolio, strategy, and autopilot for one environment (mesh node). */
+/** Codr-Hub: the portfolio, strategy, and autopilot. The table unions connected nodes. */
 export function HubPage() {
   useEscapeToGoBack();
   useRelativeTimeTick(60_000);
@@ -48,7 +49,14 @@ export function HubPage() {
       ? serverEnvironment.hubLive({ environmentId: environment.environmentId, input: {} })
       : null,
   );
+  const connectedKey = JSON.stringify(connected.map((entry) => entry.environmentId));
+  const merged = useAtomValue(
+    connected.length === 0
+      ? serverEnvironment.hubMergedProjectsEmpty
+      : serverEnvironment.hubMergedProjects(connectedKey),
+  );
   const snapshot = hub.data;
+  const tableSnapshot = snapshot ?? merged.anySnapshot;
 
   const header = (
     <div className="flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-2 py-2">
@@ -104,7 +112,7 @@ export function HubPage() {
               <p className="text-sm text-muted-foreground">
                 Connect an environment to open the hub.
               </p>
-            ) : hub.error && !snapshot ? (
+            ) : hub.error && tableSnapshot === null ? (
               <div role="alert" className="flex flex-col items-start gap-2 text-sm">
                 <p>Could not load the hub on {environment.label}.</p>
                 <p className="text-muted-foreground">{hub.error}</p>
@@ -112,23 +120,45 @@ export function HubPage() {
                   Try again
                 </Button>
               </div>
-            ) : !snapshot ? (
+            ) : tableSnapshot === null ? (
               <div className="flex flex-col gap-3" role="status" aria-label="Loading hub">
                 <Skeleton className="h-24 w-full" />
                 <Skeleton className="h-64 w-full" />
               </div>
             ) : (
               <div className="flex flex-col gap-10">
-                <HubPacePanel
+                {snapshot ? (
+                  <HubPacePanel
+                    environmentId={environment.environmentId}
+                    pace={snapshot.pace}
+                    note={snapshot.autopilotNote}
+                  />
+                ) : hub.error ? (
+                  <p role="alert" className="text-sm text-muted-foreground">
+                    Could not load pace on {environment.label}. {hub.error} Projects from other
+                    connected environments are still listed.
+                  </p>
+                ) : (
+                  <Skeleton className="h-24 w-full" />
+                )}
+                <HubProjectsTable
                   environmentId={environment.environmentId}
-                  pace={snapshot.pace}
-                  note={snapshot.autopilotNote}
+                  snapshot={tableSnapshot}
+                  projects={merged.projects}
+                  selectedNodeName={snapshot?.nodeName ?? ""}
                 />
-                <HubProjectsTable environmentId={environment.environmentId} snapshot={snapshot} />
-                <div className="grid gap-10 lg:grid-cols-2">
-                  <HubStrategyPanel environmentId={environment.environmentId} snapshot={snapshot} />
-                  <HubSettingsPanel environmentId={environment.environmentId} snapshot={snapshot} />
-                </div>
+                {snapshot ? (
+                  <div className="grid gap-10 lg:grid-cols-2">
+                    <HubStrategyPanel
+                      environmentId={environment.environmentId}
+                      snapshot={snapshot}
+                    />
+                    <HubSettingsPanel
+                      environmentId={environment.environmentId}
+                      snapshot={snapshot}
+                    />
+                  </div>
+                ) : null}
               </div>
             )}
           </WorkspacePageContainer>

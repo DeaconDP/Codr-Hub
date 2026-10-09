@@ -1,12 +1,15 @@
-import type {
-  EnvironmentId,
-  HubAutonomy,
-  HubPriority,
-  HubProjectStatus,
-  HubProjectView,
-  HubSdlcStage,
-  HubSnapshot,
-  HubUpsertProjectInput,
+import {
+  hubProjectViewForNode,
+  type EnvironmentId,
+  type HubAutonomy,
+  type HubGitGlance,
+  type HubMergedProjectView,
+  type HubNodeCheckout,
+  type HubPriority,
+  type HubProjectStatus,
+  type HubSdlcStage,
+  type HubSnapshot,
+  type HubUpsertProjectInput,
 } from "@t3tools/contracts";
 import { DownloadIcon, FolderXIcon, PlusIcon, StarIcon } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -42,12 +45,14 @@ const SORT_OPTIONS: ReadonlyArray<{ value: HubProjectSort; label: string }> = [
 export function HubProjectsTable(props: {
   readonly environmentId: EnvironmentId;
   readonly snapshot: HubSnapshot;
+  readonly projects: ReadonlyArray<HubMergedProjectView>;
+  readonly selectedNodeName: string;
 }) {
-  const { snapshot, environmentId } = props;
+  const { snapshot, environmentId, projects, selectedNodeName } = props;
   const [filter, setFilter] = useState<HubProjectFilter>("open");
   const [sort, setSort] = useState<HubProjectSort>("rank");
   const [query, setQuery] = useState("");
-  const [editing, setEditing] = useState<HubProjectView | "new" | null>(null);
+  const [editing, setEditing] = useState<HubMergedProjectView | "new" | null>(null);
   const upsert = useHubAction(
     serverEnvironment.hubUpsertProject,
     environmentId,
@@ -62,13 +67,13 @@ export function HubProjectsTable(props: {
 
   const rows = useMemo(
     () =>
-      filterAndSortProjects(snapshot.projects, {
+      filterAndSortProjects(projects, {
         filter,
         sort,
         query,
         strategy: snapshot.strategy,
       }),
-    [filter, query, snapshot.projects, snapshot.strategy, sort],
+    [filter, projects, query, snapshot.strategy, sort],
   );
   const patch = (id: string, change: Omit<HubUpsertProjectInput, "id">) =>
     void upsert.run({ id, ...change });
@@ -80,12 +85,18 @@ export function HubProjectsTable(props: {
       );
     }
   };
-  const importButton = snapshot.deezProjectManagerPath ? (
-    <Button size="xs" variant="outline" disabled={importDeez.busy} onClick={() => void runImport()}>
-      <DownloadIcon className="size-3" />
-      {importDeez.busy ? "Importing…" : "Import from Deez-PM"}
-    </Button>
-  ) : null;
+  const importButton =
+    snapshot.deezProjectManagerPath && selectedNodeName !== "" ? (
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={importDeez.busy}
+        onClick={() => void runImport()}
+      >
+        <DownloadIcon className="size-3" />
+        {importDeez.busy ? "Importing…" : "Import from Deez-PM"}
+      </Button>
+    ) : null;
 
   return (
     <section aria-labelledby="hub-projects-heading" className="flex flex-col gap-3">
@@ -116,7 +127,7 @@ export function HubProjectsTable(props: {
         </p>
       ) : null}
 
-      {snapshot.projects.length === 0 ? (
+      {projects.length === 0 ? (
         <Empty>
           <EmptyHeader>
             <EmptyTitle>No projects yet</EmptyTitle>
@@ -155,6 +166,7 @@ export function HubProjectsTable(props: {
                   index={index}
                   view={view}
                   snapshot={snapshot}
+                  selectedNodeName={selectedNodeName}
                   onEdit={() => setEditing(view)}
                   onPatch={(change) => patch(view.project.id, change)}
                 />
@@ -166,8 +178,8 @@ export function HubProjectsTable(props: {
       {editing !== null ? (
         <HubProjectDialog
           environmentId={environmentId}
-          nodeName={snapshot.nodeName}
-          view={editing === "new" ? null : editing}
+          nodeName={selectedNodeName === "" ? snapshot.nodeName : selectedNodeName}
+          view={editing === "new" ? null : hubProjectViewForNode(editing, selectedNodeName)}
           onClose={() => setEditing(null)}
         />
       ) : null}
@@ -177,13 +189,15 @@ export function HubProjectsTable(props: {
 
 function ProjectRow(props: {
   readonly index: number;
-  readonly view: HubProjectView;
+  readonly view: HubMergedProjectView;
   readonly snapshot: HubSnapshot;
+  readonly selectedNodeName: string;
   readonly onEdit: () => void;
   readonly onPatch: (change: Omit<HubUpsertProjectInput, "id">) => void;
 }) {
   const { view, snapshot, onPatch } = props;
   const { project } = view;
+  const selected = hubProjectViewForNode(view, props.selectedNodeName);
   const mode = snapshot.settings.sdlcMode;
   const strategyOptions = [
     { value: "", label: "—" },
@@ -205,7 +219,7 @@ function ProjectRow(props: {
           ) : null}
           <span className="truncate">{project.name}</span>
         </button>
-        <CheckoutLine view={view} nodeName={snapshot.nodeName} />
+        <HostOverlay nodes={view.nodes} />
       </TableCell>
       <TableCell>
         <CompactSelect
@@ -254,10 +268,10 @@ function ProjectRow(props: {
       </TableCell>
       <TableCell>
         <span className="block text-xs text-muted-foreground tabular-nums">
-          {view.awaitingReview}/{project.reviewBudget} to review
-          {view.running > 0 ? <span className="ms-1.5 text-foreground">· running</span> : null}
-          {view.lastLaunchAt ? (
-            <span className="block">{formatRelativeTimeLabel(view.lastLaunchAt)}</span>
+          {selected.awaitingReview}/{project.reviewBudget} to review
+          {selected.running > 0 ? <span className="ms-1.5 text-foreground">· running</span> : null}
+          {selected.lastLaunchAt ? (
+            <span className="block">{formatRelativeTimeLabel(selected.lastLaunchAt)}</span>
           ) : null}
         </span>
       </TableCell>
@@ -265,29 +279,58 @@ function ProjectRow(props: {
   );
 }
 
-function CheckoutLine({ view, nodeName }: { view: HubProjectView; nodeName: string }) {
-  if (view.localPath === null) {
-    return <span className="block text-xs text-muted-foreground">No checkout on {nodeName}</span>;
-  }
-  if (!view.pathExists) {
+function HostOverlay({ nodes }: { nodes: ReadonlyArray<HubNodeCheckout> }) {
+  if (nodes.length === 0) {
     return (
-      <span className="flex min-w-0 items-center gap-1 text-xs text-destructive-foreground">
+      <span className="block text-xs text-muted-foreground">No checkout on connected nodes</span>
+    );
+  }
+  return (
+    <ul className="mt-0.5 flex flex-col gap-0.5">
+      {nodes.map((node) => (
+        <li key={node.nodeName} className="min-w-0 text-xs text-muted-foreground">
+          <HostLine node={node} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function HostLine({ node }: { node: HubNodeCheckout }) {
+  const label = node.nodeName;
+  if (node.localPath === null) {
+    return <span className="block truncate">No checkout on {label}</span>;
+  }
+  if (!node.pathExists) {
+    return (
+      <span className="flex min-w-0 items-center gap-1 text-destructive-foreground">
         <FolderXIcon aria-hidden className="size-3 shrink-0" />
-        <span className="truncate">Path missing: {view.localPath}</span>
+        <span className="truncate">
+          {label}: path missing · {node.localPath}
+        </span>
       </span>
     );
   }
-  const git = view.git;
-  if (git === null) {
-    return <span className="block text-xs text-muted-foreground">Not a git repository</span>;
-  }
-  const parts = [
+  const git = node.git;
+  const gitText = git === null ? "Not a git repository" : formatGitGlance(git);
+  const running = node.running > 0 ? ` · ${node.running} running` : "";
+  return (
+    <span className="block truncate">
+      {label}: {gitText}
+      {running}
+    </span>
+  );
+}
+
+function formatGitGlance(git: HubGitGlance) {
+  return [
     git.branch ?? "detached",
     git.ahead > 0 ? `↑${git.ahead}` : null,
     git.behind > 0 ? `↓${git.behind}` : null,
     git.dirty ? "uncommitted changes" : "clean",
-  ].filter(Boolean);
-  return <span className="block truncate text-xs text-muted-foreground">{parts.join(" · ")}</span>;
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function CompactSelect<V extends string | number>(props: {

@@ -49,6 +49,6 @@ Folding in the other apps' remaining strengths is the follow-on goal (see [ROADM
 
 ## Non-goals for v0.1
 
-- Coordinating quota across nodes. Each node paces independently, so enable the autopilot on one node per account.
+- Quota coordination was outside v0.1; E2 now assigns one pacing owner through the shared portfolio remote. See [Mesh](ARCHITECTURE.md#mesh) for its boundaries.
 - A native mobile screen. The responsive web app over Tailscale covers mobile first.
 - A machine monitor, Unity/VCC imports, or a site fleet. These stay in Deez-PM until later.

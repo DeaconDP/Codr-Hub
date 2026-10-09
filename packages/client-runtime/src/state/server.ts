@@ -38,6 +38,7 @@ import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import * as Persistence from "../platform/persistence.ts";
 import { runCachePersistence } from "./cachePersistence.ts";
+import { createHubMergedProjectsAtomFamily } from "./hubMerge.ts";
 import {
   isRpcClientError,
   request,
@@ -980,6 +981,12 @@ export function createServerEnvironmentAtoms<R, E>(
     scheduler: configScheduler,
     concurrency: configConcurrency,
   });
+  /** Codr-Hub snapshot: portfolio, pace, and autopilot state, re-sent after every change. */
+  const hubLive = createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+    label: "environment-data:server:hub:live",
+    tag: WS_METHODS.hubSubscribe,
+  });
+  const hubMergedProjects = createHubMergedProjectsAtomFamily(hubLive);
 
   return {
     configValueAtom,
@@ -1082,10 +1089,9 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.scheduledTasksSubscribe,
     }),
     /** Codr-Hub snapshot: portfolio, pace, and autopilot state, re-sent after every change. */
-    hubLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
-      label: "environment-data:server:hub:live",
-      tag: WS_METHODS.hubSubscribe,
-    }),
+    hubLive,
+    hubMergedProjects: hubMergedProjects.family,
+    hubMergedProjectsEmpty: hubMergedProjects.empty,
     // A cold transcript scan is measured in seconds, so keep the result around
     // long enough that switching windows or re-rendering does not rescan.
     usageSummary: createEnvironmentRpcQueryAtomFamily(runtime, {

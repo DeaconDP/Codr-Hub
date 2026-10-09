@@ -33,10 +33,16 @@ export type HubFile = typeof HubFile.Type;
 
 export const EMPTY_HUB_FILE: HubFile = { version: 1, strategy: [], settings: DEFAULT_HUB_SETTINGS };
 
+export const NodeLaunchRecord = HubLaunchRecord.mapFields((fields) => ({
+  ...fields,
+  quotaAccountKey: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
+}));
+export type NodeLaunchRecord = typeof NodeLaunchRecord.Type;
+
 export const NodeFile = Schema.Struct({
   nodeName: Schema.String,
   autopilotEnabled: Schema.Boolean,
-  ledger: Schema.Array(HubLaunchRecord),
+  ledger: Schema.Array(NodeLaunchRecord),
 });
 export type NodeFile = typeof NodeFile.Type;
 
@@ -63,6 +69,7 @@ export const portfolioPaths = (path: Path.Path, stateDir: string): PortfolioPath
 export const defaultNodeName = () => NodeOS.hostname().replace(/\.local$/i, "") || "node";
 
 const hubError = (message: string) => (cause: unknown) => new HubError({ message, cause });
+const isHubError = Schema.is(HubError);
 
 const decodeHubFile = Schema.decodeUnknownEffect(HubFile);
 const decodeNodeFile = Schema.decodeUnknownEffect(NodeFile);
@@ -192,6 +199,31 @@ const gitOk = (cwd: string, args: ReadonlyArray<string>) =>
     ),
   );
 
+/** Never stage or abort a git operation that the owner started manually. */
+export const ensurePortfolioIdle = Effect.fnUntraced(
+  function* (paths: PortfolioPaths) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const gitDir = (yield* gitOk(paths.portfolioDir, ["rev-parse", "--absolute-git-dir"])).trim();
+    for (const marker of [
+      "rebase-merge",
+      "rebase-apply",
+      "MERGE_HEAD",
+      "CHERRY_PICK_HEAD",
+      "REVERT_HEAD",
+    ]) {
+      if (yield* fs.exists(path.join(gitDir, marker))) {
+        return yield* new HubError({
+          message: `Portfolio has an unfinished git operation; finish or abort it in ${paths.portfolioDir} before saving or syncing.`,
+        });
+      }
+    }
+  },
+  Effect.mapError((cause) =>
+    isHubError(cause) ? cause : hubError("Could not check the portfolio's git state.")(cause),
+  ),
+);
+
 /** Creates the portfolio repo on first run. Commits need an identity, so a missing one gets a local fallback. */
 export const ensurePortfolioRepo = (paths: PortfolioPaths) =>
   Effect.gen(function* () {
@@ -211,6 +243,7 @@ export const ensurePortfolioRepo = (paths: PortfolioPaths) =>
 /** Commits everything; an empty commit is not an error. */
 export const commitPortfolio = (paths: PortfolioPaths, message: string) =>
   Effect.gen(function* () {
+    yield* ensurePortfolioIdle(paths);
     yield* gitOk(paths.portfolioDir, ["add", "-A"]);
     const status = yield* gitOk(paths.portfolioDir, ["status", "--porcelain"]);
     if (status.trim() === "") return;
@@ -239,36 +272,74 @@ export const setRemote = (paths: PortfolioPaths, remote: string | null) =>
   });
 
 /**
- * Pull (rebase) then push. A conflict stops the rebase and is reported; it is
- * never resolved automatically.
+ * Pull (rebase) then push, retrying a competing push at most twice. Conflicts
+ * restore our pre-sync branch; neither node's edits are resolved automatically.
  */
 export const syncPortfolio = (paths: PortfolioPaths) =>
   Effect.gen(function* () {
+    yield* ensurePortfolioIdle(paths);
+    const status = yield* gitOk(paths.portfolioDir, ["status", "--porcelain"]);
+    if (status.trim() !== "") {
+      return yield* new HubError({
+        message: `Portfolio has uncommitted edits; commit or restore them in ${paths.portfolioDir} before syncing.`,
+      });
+    }
     // symbolic-ref also works before the first commit, when a node joins empty.
     const branch = (yield* gitOk(paths.portfolioDir, ["symbolic-ref", "--short", "HEAD"])).trim();
-    yield* gitOk(paths.portfolioDir, ["fetch", "--quiet", "origin"]);
-    const remoteHas = yield* git(paths.portfolioDir, [
-      "rev-parse",
-      "--verify",
-      "--quiet",
-      `origin/${branch}`,
-    ]);
-    if (remoteHas.code === 0) {
-      const pulled = yield* git(paths.portfolioDir, [
-        "pull",
-        "--rebase",
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      yield* gitOk(paths.portfolioDir, ["fetch", "--quiet", "origin"]);
+      const remoteHas = yield* git(paths.portfolioDir, [
+        "rev-parse",
+        "--verify",
         "--quiet",
+        `origin/${branch}`,
+      ]);
+      if (remoteHas.code === 0) {
+        const pulled = yield* git(paths.portfolioDir, [
+          "pull",
+          "--rebase",
+          "--no-autostash",
+          "--quiet",
+          "origin",
+          branch,
+        ]);
+        if (pulled.code !== 0) {
+          yield* git(paths.portfolioDir, ["rebase", "--abort"]);
+          return yield* new HubError({
+            message: `Portfolio sync conflict; local commits are retained. Resolve it in ${paths.portfolioDir}. ${firstLine(pulled.stderr)}`,
+          });
+        }
+      }
+      const hasCommits = yield* git(paths.portfolioDir, [
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "HEAD",
+      ]);
+      if (hasCommits.code !== 0) return;
+      const pushed = yield* git(paths.portfolioDir, [
+        "push",
+        "--porcelain",
+        "--quiet",
+        "-u",
         "origin",
         branch,
       ]);
-      if (pulled.code !== 0) {
-        yield* git(paths.portfolioDir, ["rebase", "--abort"]);
+      if (pushed.code === 0) return;
+      const competingPush = pushed.stdout
+        .split("\n")
+        .some(
+          (line) =>
+            line.startsWith("!\t") && /\[rejected\] \((fetch first|non-fast-forward)\)/.test(line),
+        );
+      if (!competingPush) {
         return yield* new HubError({
-          message: `Portfolio sync conflict; resolve it in ${paths.portfolioDir}. ${firstLine(pulled.stderr)}`,
+          message: `Portfolio push failed; local commits are retained. ${firstLine(pushed.stderr) || `exit ${pushed.code}`}`,
         });
       }
     }
-    const hasCommits = yield* git(paths.portfolioDir, ["rev-parse", "--verify", "--quiet", "HEAD"]);
-    if (hasCommits.code !== 0) return;
-    yield* gitOk(paths.portfolioDir, ["push", "--quiet", "-u", "origin", branch]);
+    return yield* new HubError({
+      message:
+        "Another node kept updating the portfolio. Local commits are retained; try syncing again.",
+    });
   });

@@ -2,10 +2,11 @@ import {
   HUB_STAGE_GROUPS,
   HUB_STAGE_LABELS,
   compareHubProjects,
+  mergedProjectLastLaunchAt,
+  type HubMergedProjectView,
   type HubPaceState,
   type HubPriority,
   type HubProjectStatus,
-  type HubProjectView,
   type HubSdlcMode,
   type HubSdlcStage,
   type HubStrategyPriority,
@@ -83,16 +84,16 @@ export type HubProjectSort = "rank" | "name" | "recent";
 
 /** "Open" hides done and archived work, which is what the owner scans day to day. */
 export function filterAndSortProjects(
-  views: ReadonlyArray<HubProjectView>,
+  views: ReadonlyArray<HubMergedProjectView>,
   options: {
     readonly filter: HubProjectFilter;
     readonly query: string;
     readonly sort: HubProjectSort;
     readonly strategy: ReadonlyArray<HubStrategyPriority>;
   },
-): HubProjectView[] {
+): HubMergedProjectView[] {
   const query = options.query.trim().toLowerCase();
-  const matchesFilter = (view: HubProjectView) => {
+  const matchesFilter = (view: HubMergedProjectView) => {
     const { project } = view;
     switch (options.filter) {
       case "all":
@@ -105,18 +106,21 @@ export function filterAndSortProjects(
         return !project.archived && project.status === options.filter;
     }
   };
-  const matchesQuery = (view: HubProjectView) =>
+  const matchesQuery = (view: HubMergedProjectView) =>
     query === "" ||
-    [view.project.name, view.project.category ?? "", ...view.project.tags].some((text) =>
-      text.toLowerCase().includes(query),
-    );
+    [
+      view.project.name,
+      view.project.category ?? "",
+      ...view.project.tags,
+      ...view.nodes.flatMap((node) => [node.nodeName, node.localPath ?? ""]),
+    ].some((text) => text.toLowerCase().includes(query));
   const rank = compareHubProjects(options.strategy);
-  const compare = (a: HubProjectView, b: HubProjectView) => {
+  const compare = (a: HubMergedProjectView, b: HubMergedProjectView) => {
     if (options.sort === "name") return a.project.name.localeCompare(b.project.name);
     if (options.sort === "recent") {
-      return (b.lastLaunchAt ?? b.project.updatedAt).localeCompare(
-        a.lastLaunchAt ?? a.project.updatedAt,
-      );
+      const aAt = mergedProjectLastLaunchAt(a) ?? a.project.updatedAt;
+      const bAt = mergedProjectLastLaunchAt(b) ?? b.project.updatedAt;
+      return bAt.localeCompare(aAt);
     }
     return rank(a.project, b.project);
   };
