@@ -39,6 +39,9 @@ import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import * as Persistence from "../platform/persistence.ts";
 import { runCachePersistence } from "./cachePersistence.ts";
 import { createHubMergedProjectsAtomFamily } from "./hubMerge.ts";
+
+// Re-exported so consumers' inferred `serverEnvironment` type stays nameable.
+export type { HubMergedProjectsLive } from "./hubMerge.ts";
 import {
   isRpcClientError,
   request,

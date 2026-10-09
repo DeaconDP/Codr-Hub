@@ -39,7 +39,9 @@ export class AndroidIconRenderError extends Schema.TaggedError<AndroidIconRender
   { layer: Schema.String, cause: Schema.Defect() },
 ) {}
 
-const solidCanvas = (layer: string, size: number, background: string) =>
+type CanvasBackground = string | { r: number; g: number; b: number; alpha: number };
+
+const solidCanvas = (layer: string, size: number, background: CanvasBackground) =>
   Effect.tryPromise({
     try: () =>
       sharp({ create: { width: size, height: size, channels: 4, background } })
