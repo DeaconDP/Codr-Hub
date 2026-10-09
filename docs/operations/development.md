@@ -10,6 +10,13 @@ vp i
 vp run dev
 ```
 
+Or double-click `run.command` (macOS) / `run.bat` (Windows). Those scripts install
+`vp` if needed, run `vp i` when `node_modules` is missing or stale, start
+`npm run dev` on the sticky ports (web **5733**, server **13773**), and open
+http://localhost:5733. On macOS they hand off to the shared `dale` tmux window
+`codr-hub`. They never set `VITE_HTTP_URL` or `VITE_WS_URL`. If this checkout
+already owns those ports, they only open the URL.
+
 Open the pairing URL printed by the dev runner. The bare origin does not authenticate
 a new browser.
 

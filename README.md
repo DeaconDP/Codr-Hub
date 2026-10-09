@@ -127,6 +127,8 @@ Checkout their getting started guide for more information: https://viteplus.dev/
 vp i
 ```
 
+On this Codr-Hub fork, double-click `run.command` (macOS) or `run.bat` (Windows) to install `vp` if needed, run `vp i`, start the sticky-port stack at http://localhost:5733, and open a browser.
+
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
 
 Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
