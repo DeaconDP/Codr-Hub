@@ -67,4 +67,7 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 ## Next engineering slice
 
 - [x] E2: merge the Hub project view across connected environments
-- [ ] E9: performant agent-task micro-animations (policy note → Hub running shine → chat stage cues). See [ROADMAP.md](ROADMAP.md) E9. After the E2 mesh Hub view unless Dale pulls it forward.
+- [x] E9: motion policy note (`docs/codr-hub/MOTION.md`)
+- [x] E9: Hub running badge, one visibility-gated shine per active project
+- [x] E9: chat live-row enter / complete / fail cues (`apps/web/src/codrHub/liveStageCue.ts`, 4 tests), web typecheck, targeted lint
+- [ ] Owner: check E9 by hand on a high-refresh display (live shine, offscreen and hidden-tab pause, Reduce motion, one Hub badge per job)

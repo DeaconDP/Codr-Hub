@@ -64,6 +64,7 @@ import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
 import { claudeSkillInvocation } from "@t3tools/shared/toolActivity";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
+import { useLiveStageCueRef } from "../../codrHub/liveStageCue";
 import {
   createContext,
   memo,
@@ -3521,9 +3522,10 @@ function LiveActivityRow({
 }) {
   const animated = active && !failed;
   const showShimmer = animated && shimmer;
+  const stageCueRef = useLiveStageCueRef<HTMLDivElement>(active, failed); // Codr-Hub E9
   return (
     <div
-      ref={animated ? observeVisibleAnimation : undefined}
+      ref={stageCueRef}
       className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed"
     >
       <LiveActivityContent

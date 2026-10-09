@@ -40,7 +40,7 @@ Problems → priorities → projects, a research agent per priority, and a Notio
 
 Codr-Hub branding, a website, and downloadable builds, for when other coders join.
 
-### E9. Performant agent-task micro-animations
+### E9. Performant agent-task micro-animations (in progress)
 
 Complex motion that still keeps the app fast. Put almost all continuous animation on live agent work. Keep idle chrome still.
 
@@ -59,6 +59,8 @@ Complex motion that still keeps the app fast. Put almost all continuous animatio
 3. Stronger chat live-row stage cues (enter, complete, fail) without idle loops. `apps/web/src/components/chat/MessagesTimeline.tsx`
 4. Optional demo-only HTML walkthroughs (clone skill style) for Hub onboarding. Never wired into the live app runtime.
 
+Steps 1–3 shipped: [docs/codr-hub/MOTION.md](docs/codr-hub/MOTION.md), the Hub row running badge, and `useLiveStageCueRef` enter/complete/fail cues on chat live rows. Owner check by hand on a high-refresh display is pending.
+
 Done when agent work feels alive on chat and Hub, idle surfaces stay still, and reduced-motion / offscreen pauses are verified by hand on a high-refresh display.
 
 ## Deferred
@@ -72,3 +74,4 @@ Done when agent work feels alive on chat and Hub, idle surfaces stay still, and 
 - 2026-10-05: Autopilot launches one thread per project at a time and does not continue a thread across stages; stage advancement is manual. `apps/server/src/codrHub/selection.ts:30`
 - 2026-10-05: Ambient / decorative Hub and settings motion deferred. Continuous animation budget is reserved for live agent tasks (E9). `apps/web/src/components/hub/HubPage.tsx`
 - 2026-10-05: Framer Motion / layout animation in product UI deferred. Prefer CSS + `observeVisibleAnimation`. `apps/web/src/lib/visibleAnimation.ts`
+- 2026-10-10: E9 step 4 (demo-only HTML Hub onboarding walkthroughs) deferred. It is optional, and the "clone skill style" it should follow isn't documented in the repo yet. `docs/codr-hub/MOTION.md`

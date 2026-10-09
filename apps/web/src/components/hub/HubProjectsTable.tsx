@@ -14,6 +14,7 @@ import {
 import { DownloadIcon, FolderXIcon, PlusIcon, StarIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import { serverEnvironment } from "../../state/server";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
@@ -269,13 +270,26 @@ function ProjectRow(props: {
       <TableCell>
         <span className="block text-xs text-muted-foreground tabular-nums">
           {selected.awaitingReview}/{project.reviewBudget} to review
-          {selected.running > 0 ? <span className="ms-1.5 text-foreground">· running</span> : null}
+          {selected.running > 0 ? <RunningBadge count={selected.running} /> : null}
           {selected.lastLaunchAt ? (
             <span className="block">{formatRelativeTimeLabel(selected.lastLaunchAt)}</span>
           ) : null}
         </span>
       </TableCell>
     </TableRow>
+  );
+}
+
+/**
+ * The one live indicator for a project's autopilot work (docs/codr-hub/MOTION.md).
+ * Mounted only while a job runs; the shine pauses offscreen, in hidden tabs,
+ * and under reduced motion. Host lines keep their static running count.
+ */
+function RunningBadge({ count }: { count: number }) {
+  return (
+    <span ref={observeVisibleAnimation} className="live-tool-shine ms-1.5 text-foreground">
+      · {count > 1 ? `${count} running` : "running"}
+    </span>
   );
 }
 
