@@ -307,6 +307,20 @@ function isTransientBootstrapError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+async function tryTailnetJoin(): Promise<boolean> {
+  try {
+    const response = await fetch("/.well-known/t3/tailnet/join", {
+      method: "POST",
+      credentials: "include",
+      headers: { "x-codr-hub-tailnet": "browser" },
+      signal: AbortSignal.timeout(2_500),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function bootstrapServerAuth(urlCredential: string | null): Promise<ServerAuthGateState> {
   const currentSession = await fetchSessionState();
   if (currentSession.authenticated && !urlCredential) {
@@ -315,6 +329,13 @@ async function bootstrapServerAuth(urlCredential: string | null): Promise<Server
 
   const bootstrapCredential = urlCredential ?? getDesktopBootstrapCredential();
   if (!bootstrapCredential) {
+    const joined = await tryTailnetJoin();
+    if (joined) {
+      const session = await fetchSessionState();
+      if (session.authenticated) {
+        return { status: "authenticated" };
+      }
+    }
     return {
       status: "requires-auth",
       auth: currentSession.auth,

@@ -1,17 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import {
-  confirmEcho,
-  createEchoLedger,
   createSessionCache,
-  echoHostAllowed,
-  https443Occupied,
+  discoverOrigins,
   parseMeshManifest,
-  planTailnetServe,
-  replyHostPeer,
   rosterFromStatus,
-  selectReplyOrigin,
   selfDnsName,
+  selfPeer,
+  tailnetAdmit,
 } from "./tailnetMesh.ts";
 
 const SELF = "n1111111111111111";
@@ -72,37 +68,27 @@ describe("tailnet mesh", () => {
     expect(selfDnsName(running)).toBe("self.tail.ts.net");
   });
 
-  it("echoes one nonce once and refuses a mismatched body", () => {
-    const peer = rosterFromStatus(running)[0]!;
-    const ledger = createEchoLedger();
-    const replyHost = selfDnsName(running);
-    expect(replyHost).toBe("self.tail.ts.net");
-    const nonce = ledger.issue({
-      peerDns: peer.dnsName,
-      replyHost: replyHost!,
-      nowMs: 1_000,
-    });
-    expect(ledger.take(nonce, "evil.tail.ts.net", 2_000)).toBeNull();
-    expect(echoHostAllowed("self.tail.ts.net", "127.0.0.1")).toBe(true);
-    expect(ledger.take(nonce, "127.0.0.1", 2_000)).toBe(nonce);
-    expect(ledger.take(nonce, "self.tail.ts.net", 2_000)).toBeNull();
-    expect(ledger.take("different-nonce", "self.tail.ts.net", 2_000)).toBeNull();
-    expect(confirmEcho(peer, nonce, "different-nonce")).toBeNull();
-    expect(confirmEcho(peer, nonce, nonce)).toMatchObject({
-      _tag: "TailnetPrincipal",
-      nodeId: SAME,
-    });
+  it("admits a loopback or tailnet socket only while Tailscale is running", () => {
+    expect(tailnetAdmit({ running: true, remoteAddress: "127.0.0.1" })).toBe(true);
+    expect(tailnetAdmit({ running: true, remoteAddress: "::ffff:127.0.0.1" })).toBe(true);
+    expect(tailnetAdmit({ running: true, remoteAddress: "100.64.0.1" })).toBe(true);
+    expect(tailnetAdmit({ running: true, remoteAddress: "203.0.113.5" })).toBe(false);
+    expect(tailnetAdmit({ running: false, remoteAddress: "127.0.0.1" })).toBe(false);
+    expect(tailnetAdmit({ running: true, remoteAddress: null })).toBe(false);
+    expect(selfPeer(running)?.nodeId).toBe(SELF);
+    expect(selfPeer({ BackendState: "NeedsLogin" })).toBeNull();
   });
 
-  it("refuses a reply host that is not a same-user peer before an echo exists", () => {
-    const roster = rosterFromStatus(running);
-    expect(replyHostPeer(roster, "https://other.tail.ts.net")).toBeNull();
-    expect(replyHostPeer(roster, "https://stranger.example")).toBeNull();
-    expect(replyHostPeer(roster, "http://peer.tail.ts.net")).toBeNull();
-    expect(replyHostPeer(roster, "https://peer.tail.ts.net:5733")).toEqual({
-      peer: roster[0],
-      echoUrl: "https://peer.tail.ts.net:5733/.well-known/t3/tailnet/echo",
-    });
+  it("tries the peer root, the dev share port, and manifest origins on that name", () => {
+    expect(
+      discoverOrigins("peer.tail.ts.net", [
+        { origins: ["https://peer.tail.ts.net:8443", "https://evil.example"] },
+      ]),
+    ).toEqual([
+      "https://peer.tail.ts.net",
+      "https://peer.tail.ts.net:5733",
+      "https://peer.tail.ts.net:8443",
+    ]);
   });
 
   it("keeps a MagicDNS https origin and drops a different host", () => {
@@ -122,18 +108,6 @@ describe("tailnet mesh", () => {
     ).toEqual(["https://peer.tail.ts.net:5733", "https://peer.tail.ts.net"]);
   });
 
-  it("plans a tailnet path on 443 and does not enable Funnel", () => {
-    const plan = planTailnetServe(13773);
-    expect(plan).toEqual([
-      "serve",
-      "--bg",
-      "--https=443",
-      "--set-path=/.well-known/t3",
-      "http://127.0.0.1:13773/.well-known/t3",
-    ]);
-    expect(plan.some((arg) => arg.toLowerCase().includes("funnel"))).toBe(false);
-  });
-
   it("reads the suffix from CurrentTailnet when the top-level field is absent", () => {
     const { MagicDNSSuffix: _omitted, ...withoutTopLevel } = running;
     expect(
@@ -142,27 +116,6 @@ describe("tailnet mesh", () => {
         CurrentTailnet: { MagicDNSSuffix: "tail.ts.net." },
       }).map((peer) => peer.dnsName),
     ).toEqual(["peer.tail.ts.net"]);
-  });
-
-  it("replies on the origin that proxies to this process and leaves an occupied 443 alone", () => {
-    const self = selfDnsName(running)!;
-    const serve = {
-      TCP: {
-        "443": { HTTPS: true },
-        "5733": { HTTPS: true },
-      },
-      Web: {
-        "self.tail.ts.net:443": { Handlers: { "/": { Proxy: "http://127.0.0.1:3773" } } },
-        "self.tail.ts.net:5733": { Handlers: { "/": { Proxy: "http://127.0.0.1:5733" } } },
-      },
-    };
-    expect(selectReplyOrigin(serve, self, 3773, null)).toBe("https://self.tail.ts.net");
-    expect(selectReplyOrigin(serve, self, 13773, "https://self.tail.ts.net:5733/")).toBe(
-      "https://self.tail.ts.net:5733",
-    );
-    expect(selectReplyOrigin(serve, self, 13773, "http://127.0.0.1:5733")).toBeNull();
-    expect(https443Occupied(serve, self)).toBe(true);
-    expect(https443Occupied({ TCP: {}, Web: {} }, self)).toBe(false);
   });
 
   it("returns the first minted token for a node", () => {

@@ -47,7 +47,7 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
-import { echoHandler, meshManifestHandler, witnessHandler } from "./codrHub/tailnetMesh.ts";
+import { joinHandler, meshManifestHandler } from "./codrHub/tailnetMesh.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -663,8 +663,7 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
 
 export const tailnetMeshRouteLayer = Layer.mergeAll(
   HttpRouter.add("GET", "/.well-known/t3/codr-hub-mesh", meshManifestHandler),
-  HttpRouter.add("POST", "/.well-known/t3/tailnet/witness", witnessHandler),
-  HttpRouter.add("POST", "/.well-known/t3/tailnet/echo", echoHandler),
+  HttpRouter.add("POST", "/.well-known/t3/tailnet/join", joinHandler),
 );
 
 // Read the installed build's manifest once. Unknown files use revalidation.

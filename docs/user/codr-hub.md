@@ -47,6 +47,6 @@ The portfolio is a git repository. Set **Portfolio git remote** to a private rep
 
 Use the same remote and an updated Codr-Hub version on every machine sharing an account. Without a remote, pacing is local: keep Autopilot on one machine per account. Ownership covers Hub's launches and automatic resets; agents and resets you start manually still use the same allowance. To change the remote, turn Autopilot off and finish reviewing its threads first.
 
-Other Codr-Hub machines signed into the same Tailscale account show up while the app is open. There is no pairing link to paste. A machine that is off, logged out of Tailscale, or not running Codr-Hub stays absent.
+Open Codr-Hub on a machine signed into your Tailscale account. The app signs you in. Other Codr-Hub machines on that account show up while the app is open. There is no pairing link to paste. Pairing remains when Tailscale is logged out. A machine that is off or not running Codr-Hub stays absent. Leave Tailscale Funnel off.
 
 The project table merges live data from every connected T3 environment. Pace, Autopilot, Run once, and Import still apply to the environment selected at the top. One unreachable environment is omitted from the merge; it does not hide the others.

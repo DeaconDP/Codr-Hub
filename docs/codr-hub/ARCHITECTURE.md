@@ -29,7 +29,8 @@ Upstream T3 Code lands about 40 commits a day. Every line we change in an upstre
 | `apps/mobile/app.config.ts`                            | `T3CODE_IOS_APPLE_TEAM_ID` plus existing personal-team bundle/capability path           |
 | `apps/web/src/components/chat/MessagesTimeline.tsx`    | `LiveActivityRow` ref uses `useLiveStageCueRef` (E9 stage cues, `apps/web/src/codrHub`) |
 | `apps/server/src/http.ts`                              | Tailnet mesh well-known routes                                                          |
-| `apps/server/src/server.ts`                            | Mesh route layer, and the tailnet path on startup                                       |
+| `apps/server/src/server.ts`                            | Mesh route layer                                                                        |
+| `apps/web/src/environments/primary/auth.ts`            | Tailnet join before the pairing gate                                                    |
 | `apps/web/src/connection/runtime.ts`                   | `linkTailnetMeshLayer`                                                                  |
 | `apps/mobile/src/connection/runtime.ts`                | `linkTailnetMeshLayer`                                                                  |
 | `packages/client-runtime/src/connection/onboarding.ts` | export `bearerConnectionId`                                                             |
@@ -103,4 +104,4 @@ Ownership lives on `refs/heads/codr-hub-quota/<account hash>`, outside `main`, w
 
 Owners do not expire. Launches pause if the remote cannot verify ownership. Turning Autopilot off releases this node's claims on a subsequent minute tick only after its launched work is finished and settled or archived. Thread-state failures block release. Changing the remote uses the same drain requirement and releases claims on the old remote first. An offline owner must be recovered for normal handover; automatic timeout takeover would permit paused work to resume alongside another owner.
 
-Tailscale Serve terminates HTTPS and delivers the request to 127.0.0.1. This server does not read X-Forwarded-For, so the socket is not the peer. The peer mints a standard-scope token only after the introducer's MagicDNS name echoes the one-time nonce, and keeps that token in memory under the introducer's node id. The echo returns to an origin that already proxies to this process. If port 443 already serves another process, this server does not add a path there.
+Opening the app on a tailnet URL asks `POST /.well-known/t3/tailnet/join`. The server admits that request when Tailscale is logged in and the socket is loopback or a 100.64/10 address, then sets the normal browser session cookie with standard scopes. Other machines on the same account are saved by posting that same join to each peer origin. The token is cached in memory for this node. This server does not change `tailscale serve` config and does not read X-Forwarded-For. Leave Tailscale Funnel off. Funnel arrives on the same loopback socket, and a logged-in tailnet is the only gate. Pairing remains when Tailscale is logged out.

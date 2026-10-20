@@ -5,8 +5,8 @@ import {
 } from "@t3tools/contracts";
 import { deriveWsBaseUrl, normalizeHttpBaseUrl } from "@t3tools/shared/advertisedEndpoint";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import * as NodeCrypto from "node:crypto";
-import * as Clock from "effect/Clock";
+import { isTailscaleIpv4Address } from "@t3tools/tailscale";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -19,16 +19,20 @@ import {
   HttpServerRequest,
   HttpServerResponse,
 } from "effect/unstable/http";
+import * as Cookies from "effect/unstable/http/Cookies";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
-import * as ServerConfig from "../config.ts";
+import * as SessionStore from "../auth/SessionStore.ts";
+import { deriveAuthClientMetadata } from "../auth/utils.ts";
 
 const STATUS_TIMEOUT = Duration.millis(1_500);
-const SERVE_TIMEOUT = Duration.seconds(10);
 const HTTP_TIMEOUT = Duration.millis(2_500);
-const NONCE_TTL_MS = 15_000;
 const MESH_PREFIX = "/.well-known/t3";
+const JOIN_PATH = `${MESH_PREFIX}/tailnet/join`;
+/** Dev share publishes the web port. The manifest adds any other HTTPS port. */
+const DEV_SHARE_PORT = 5733;
+const BROWSER_JOIN_HEADER = "x-codr-hub-tailnet";
 
 declare const TailnetNodeIdBrand: unique symbol;
 declare const MagicDnsNameBrand: unique symbol;
@@ -46,16 +50,11 @@ export type TailnetAccessToken = string & {
   readonly [TailnetAccessTokenBrand]: "TailnetAccessToken";
 };
 
-/** An online same-user node. It has not proved it can see this server. */
+/** An online node on this Tailscale account. */
 export interface TailnetPeer {
   readonly nodeId: TailnetNodeId;
   readonly dnsName: MagicDnsName;
   readonly userId: TailnetUserId;
-}
-
-/** A peer whose echo matched the nonce this server issued. Only this can mint. */
-export interface TailnetPrincipal extends TailnetPeer {
-  readonly _tag: "TailnetPrincipal";
 }
 
 export interface MeshLink {
@@ -206,91 +205,58 @@ export function serveOrigins(value: unknown, selfDns: MagicDnsName): readonly st
   return origins;
 }
 
+function normalizeAddress(address: string): string {
+  const trimmed = address.trim().toLowerCase();
+  return trimmed.startsWith("::ffff:") ? trimmed.slice("::ffff:".length) : trimmed;
+}
+
+function isLoopbackAddress(address: string): boolean {
+  return address === "127.0.0.1" || address === "::1";
+}
+
 /**
- * A reply host that is not in the roster has no echo URL, so the caller never
- * asks for an echo body.
+ * Tailscale Serve delivers the tailnet to this process as loopback. A direct
+ * tailnet socket is 100.64/10. Anything else, including a logged-out machine,
+ * is refused. Funnel uses the same loopback socket, so leave Funnel off.
  */
-export function replyHostPeer(
-  roster: readonly TailnetPeer[],
-  replyOrigin: string,
-): { readonly peer: TailnetPeer; readonly echoUrl: string } | null {
-  let url: URL;
-  try {
-    url = new URL(replyOrigin);
-  } catch {
-    return null;
+export function tailnetAdmit(input: {
+  readonly running: boolean;
+  readonly remoteAddress: string | null;
+}): boolean {
+  if (!input.running || input.remoteAddress === null || input.remoteAddress.length === 0) {
+    return false;
   }
-  if (url.protocol !== "https:" || url.username !== "" || url.password !== "") return null;
-  const host = magicDnsName(url.hostname);
-  if (host === null) return null;
-  const peer = roster.find((candidate) => candidate.dnsName === host);
-  if (peer === undefined) return null;
-  return { peer, echoUrl: `${url.origin}${MESH_PREFIX}/tailnet/echo` };
+  const address = normalizeAddress(input.remoteAddress);
+  return isLoopbackAddress(address) || isTailscaleIpv4Address(address);
+}
+
+/** This machine, when Tailscale is logged in and running. */
+export function selfPeer(value: unknown): TailnetPeer | null {
+  if (!isRecord(value) || value.BackendState !== "Running" || !isRecord(value.Self)) return null;
+  const dnsName = magicDnsName(value.Self.DNSName);
+  const id = nodeId(value.Self.ID);
+  const uid = userId(value.Self.UserID);
+  if (dnsName === null || id === null || uid === null) return null;
+  return { nodeId: id, dnsName, userId: uid };
 }
 
 /**
- * Tailscale Serve rewrites the socket to loopback and sometimes the Host
- * header with it. A foreign MagicDNS host is refused. Loopback is the proxy.
+ * Always try the peer's HTTPS root and the dev share port. A manifest can add
+ * other HTTPS origins on that same MagicDNS name.
  */
-export function echoHostAllowed(storedReplyHost: string, requestHost: string): boolean {
-  if (requestHost === storedReplyHost) return true;
-  return requestHost === "127.0.0.1" || requestHost === "localhost" || requestHost === "::1";
-}
-
-export function confirmEcho(
-  peer: TailnetPeer,
-  nonce: string,
-  echoBody: string,
-): TailnetPrincipal | null {
-  if (nonce.length === 0 || echoBody !== nonce) return null;
-  return {
-    _tag: "TailnetPrincipal",
-    nodeId: peer.nodeId,
-    dnsName: peer.dnsName,
-    userId: peer.userId,
+export function discoverOrigins(peerDns: string, manifests: readonly unknown[]): readonly string[] {
+  const dns = magicDnsName(peerDns);
+  if (dns === null) return [];
+  const kept: string[] = [];
+  const push = (origin: string) => {
+    if (!kept.includes(origin)) kept.push(origin);
   };
-}
-
-interface PendingNonce {
-  readonly nonce: string;
-  readonly peerDns: MagicDnsName;
-  readonly replyHost: MagicDnsName;
-  readonly expiresAtMs: number;
-}
-
-export function createEchoLedger() {
-  const pending = new Map<string, PendingNonce>();
-  return {
-    issue(input: {
-      readonly peerDns: MagicDnsName;
-      readonly replyHost: MagicDnsName;
-      readonly nowMs: number;
-      readonly nonce?: string;
-    }): string {
-      const nonce = input.nonce ?? NodeCrypto.randomBytes(16).toString("hex");
-      for (const [key, value] of pending) {
-        if (value.peerDns === input.peerDns) pending.delete(key);
-      }
-      pending.set(nonce, {
-        nonce,
-        peerDns: input.peerDns,
-        replyHost: input.replyHost,
-        expiresAtMs: input.nowMs + NONCE_TTL_MS,
-      });
-      return nonce;
-    },
-    take(nonce: string, replyHost: string, nowMs: number): string | null {
-      const found = pending.get(nonce);
-      if (found === undefined) return null;
-      if (nowMs >= found.expiresAtMs) {
-        pending.delete(nonce);
-        return null;
-      }
-      if (!echoHostAllowed(found.replyHost, replyHost)) return null;
-      pending.delete(nonce);
-      return found.nonce;
-    },
-  };
+  push(`https://${dns}`);
+  push(`https://${dns}:${DEV_SHARE_PORT}`);
+  for (const manifest of manifests) {
+    for (const origin of parseMeshManifest(manifest, dns)) push(origin);
+  }
+  return kept;
 }
 
 export function createSessionCache() {
@@ -310,96 +276,7 @@ export function createSessionCache() {
   };
 }
 
-/**
- * Tailscale strips the mount before proxying, so the local target repeats the
- * prefix. Funnel is absent: the path stays on the tailnet.
- */
-export function planTailnetServe(localPort: number): readonly string[] {
-  return [
-    "serve",
-    "--bg",
-    "--https=443",
-    `--set-path=${MESH_PREFIX}`,
-    `http://127.0.0.1:${localPort}${MESH_PREFIX}`,
-  ];
-}
-
-function proxyPort(proxy: unknown): number | null {
-  if (typeof proxy !== "string") return null;
-  try {
-    const url = new URL(proxy);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    if (url.port.length === 0) return url.protocol === "https:" ? 443 : 80;
-    const port = Number(url.port);
-    return Number.isInteger(port) ? port : null;
-  } catch {
-    return null;
-  }
-}
-
-interface ServeBinding {
-  readonly origin: string;
-  readonly httpsPort: number;
-  readonly proxyPort: number | null;
-}
-
-function serveBindings(value: unknown, selfDns: MagicDnsName): readonly ServeBinding[] {
-  if (!isRecord(value) || !isRecord(value.Web)) return [];
-  const tcp = isRecord(value.TCP) ? value.TCP : {};
-  const bindings: ServeBinding[] = [];
-  for (const [key, entry] of Object.entries(value.Web)) {
-    const parsed = splitHostPort(key);
-    if (parsed === null || parsed.host !== selfDns) continue;
-    const tcpEntry = tcp[String(parsed.port)];
-    if (!isRecord(tcpEntry) || tcpEntry.HTTPS !== true) continue;
-    const origin =
-      parsed.port === 443 ? `https://${parsed.host}` : `https://${parsed.host}:${parsed.port}`;
-    let proxied: number | null = null;
-    if (isRecord(entry) && isRecord(entry.Handlers)) {
-      for (const handler of Object.values(entry.Handlers)) {
-        if (!isRecord(handler)) continue;
-        proxied = proxyPort(handler.Proxy);
-        if (proxied !== null) break;
-      }
-    }
-    bindings.push({ origin, httpsPort: parsed.port, proxyPort: proxied });
-  }
-  return bindings;
-}
-
-/**
- * The origin whose Tailscale proxy reaches this process. An https dev URL wins,
- * because `vp run dev --share` publishes Vite, and Vite proxies `/.well-known`
- * to this server. Otherwise the handler whose proxy port is this listen port.
- */
-export function selectReplyOrigin(
-  serveJson: unknown,
-  selfDns: MagicDnsName,
-  localPort: number,
-  devOrigin: string | null,
-): string | null {
-  if (devOrigin !== null) {
-    try {
-      const url = new URL(devOrigin);
-      if (url.protocol === "https:" && magicDnsName(url.hostname) === selfDns) return url.origin;
-    } catch {
-      // A bad dev URL is not a reply origin.
-    }
-  }
-  return (
-    serveBindings(serveJson, selfDns).find((binding) => binding.proxyPort === localPort)?.origin ??
-    null
-  );
-}
-
-/** True when 443 already has a handler. Installing another would steal its paths. */
-export function https443Occupied(serveJson: unknown, selfDns: MagicDnsName): boolean {
-  return serveBindings(serveJson, selfDns).some((binding) => binding.httpsPort === 443);
-}
-
-const echoes = createEchoLedger();
 const sessions = createSessionCache();
-let publishedReplyOrigin: string | null = null;
 
 const collectText = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
   stream.pipe(
@@ -457,45 +334,29 @@ const readHttpText = (request: HttpClientRequest.HttpClientRequest) =>
     return yield* response.value.text.pipe(Effect.orElseSucceed(() => null));
   });
 
-const mintAccessToken = Effect.fn("codrHub.tailnetMesh.mint")(function* (
-  principal: TailnetPrincipal,
-) {
-  const cached = sessions.get(principal.nodeId);
+const mintAccessToken = Effect.fn("codrHub.tailnetMesh.mint")(function* (peer: TailnetPeer) {
+  const cached = sessions.get(peer.nodeId);
   if (cached !== undefined) return cached;
   const auth = yield* EnvironmentAuth.EnvironmentAuth;
   const pairing = yield* auth.createPairingLink({
     scopes: AuthStandardClientScopes,
-    subject: `tailnet-node:${principal.nodeId}`,
-    label: "Tailnet mesh",
+    subject: `tailnet-node:${peer.nodeId}`,
+    label: "Tailscale",
   });
   const access = yield* auth.exchangeBootstrapCredentialForAccessToken(
     pairing.credential,
     [...AuthStandardClientScopes],
-    { deviceType: "bot", label: "Tailnet mesh" },
+    { deviceType: "bot", label: "Tailscale" },
   );
-  return sessions.remember(principal.nodeId, access.access_token);
+  return sessions.remember(peer.nodeId, access.access_token);
 });
 
-function readNonce(value: unknown): string | null {
-  if (!isRecord(value) || typeof value.nonce !== "string" || value.nonce.length === 0) return null;
-  return value.nonce;
+function requestAddress(request: HttpServerRequest.HttpServerRequest): string | null {
+  return Option.getOrNull(request.remoteAddress);
 }
 
-function readWitness(
-  value: unknown,
-): { readonly nonce: string; readonly replyOrigin: string } | null {
-  const nonce = readNonce(value);
-  if (nonce === null || !isRecord(value) || typeof value.replyOrigin !== "string") return null;
-  return { nonce, replyOrigin: value.replyOrigin };
-}
-
-function hostnameOf(hostHeader: string | undefined): string | null {
-  if (hostHeader === undefined || hostHeader.length === 0) return null;
-  try {
-    return new URL(`https://${hostHeader}`).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
+function wantsBrowserSession(request: HttpServerRequest.HttpServerRequest): boolean {
+  return request.headers[BROWSER_JOIN_HEADER] === "browser";
 }
 
 export const meshManifestHandler = Effect.gen(function* () {
@@ -508,70 +369,70 @@ export const meshManifestHandler = Effect.gen(function* () {
   return HttpServerResponse.jsonUnsafe({ origins });
 }).pipe(Effect.orElseSucceed(() => HttpServerResponse.jsonUnsafe({ origins: [] })));
 
-export const echoHandler = Effect.gen(function* () {
-  const request = yield* HttpServerRequest.HttpServerRequest;
-  // Serve terminates TLS on the tailnet and connects here as 127.0.0.1, so the
-  // socket is not the caller. Host is the MagicDNS name the peer requested.
-  const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
-  const nonce = readNonce(body);
-  const host = hostnameOf(request.headers.host);
-  const nowMs = yield* Clock.currentTimeMillis;
-  if (nonce === null || host === null) return HttpServerResponse.empty({ status: 404 });
-  const echoed = echoes.take(nonce, host, nowMs);
-  if (echoed === null) return HttpServerResponse.empty({ status: 404 });
-  return HttpServerResponse.text(echoed);
-}).pipe(Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 404 })));
-
-export const witnessHandler = Effect.gen(function* () {
-  const request = yield* HttpServerRequest.HttpServerRequest;
-  const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
-  const parsed = readWitness(body);
-  if (parsed === null) return HttpServerResponse.empty({ status: 400 });
-  const statusText = yield* tailscaleStdout(["status", "--json"], STATUS_TIMEOUT);
-  const roster = statusText === null ? [] : rosterFromStatus(parseJson(statusText));
-  const admitted = replyHostPeer(roster, parsed.replyOrigin);
-  if (admitted === null) return HttpServerResponse.empty({ status: 403 });
-  const echoText = yield* readHttpText(
-    HttpClientRequest.post(admitted.echoUrl).pipe(
-      HttpClientRequest.bodyJsonUnsafe({ nonce: parsed.nonce }),
-    ),
-  );
-  const principal =
-    echoText === null ? null : confirmEcho(admitted.peer, parsed.nonce, echoText.trim());
-  if (principal === null) return HttpServerResponse.empty({ status: 403 });
-  const token = yield* mintAccessToken(principal).pipe(Effect.option);
-  if (Option.isNone(token)) return HttpServerResponse.empty({ status: 403 });
-  return HttpServerResponse.jsonUnsafe({ accessToken: token.value });
-}).pipe(Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 500 })));
-
-const linkOrigin = Effect.fn("codrHub.tailnetMesh.linkOrigin")(function* (
-  peer: TailnetPeer,
-  origin: string,
-  selfDns: MagicDnsName,
+const issueBrowserCookie = Effect.fn("codrHub.tailnetMesh.browserCookie")(function* (
+  self: TailnetPeer,
+  request: HttpServerRequest.HttpServerRequest,
+  token: string,
 ) {
+  const auth = yield* EnvironmentAuth.EnvironmentAuth;
+  const sessions = yield* SessionStore.SessionStore;
+  const pairing = yield* auth.createPairingLink({
+    scopes: AuthStandardClientScopes,
+    subject: `tailnet-node:${self.nodeId}`,
+    label: "Tailscale",
+  });
+  const browser = yield* auth.createBrowserSession(
+    pairing.credential,
+    deriveAuthClientMetadata({ request }),
+  );
+  const cookieName = browser.cookieName ?? sessions.cookieName;
+  const cookies = yield* Effect.fromResult(
+    Cookies.set(Cookies.empty, cookieName, browser.sessionToken, {
+      expires: DateTime.toDate(browser.response.expiresAt),
+      httpOnly: true,
+      path: "/",
+      sameSite: "lax",
+    }),
+  );
+  return HttpServerResponse.mergeCookies(
+    HttpServerResponse.jsonUnsafe({ accessToken: token }),
+    cookies,
+  );
+});
+
+export const joinHandler = Effect.gen(function* () {
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const statusText = yield* tailscaleStdout(["status", "--json"], STATUS_TIMEOUT);
+  const status = statusText === null ? null : parseJson(statusText);
+  const self = selfPeer(status);
+  if (!tailnetAdmit({ running: self !== null, remoteAddress: requestAddress(request) })) {
+    return HttpServerResponse.empty({ status: 403 });
+  }
+  if (self === null) return HttpServerResponse.empty({ status: 403 });
+  const token = yield* mintAccessToken(self).pipe(Effect.option);
+  if (Option.isNone(token)) return HttpServerResponse.empty({ status: 403 });
+  if (!wantsBrowserSession(request)) {
+    return HttpServerResponse.jsonUnsafe({ accessToken: token.value });
+  }
+  return yield* issueBrowserCookie(self, request, token.value).pipe(
+    Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 403 })),
+  );
+}).pipe(Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 403 })));
+
+const linkOrigin = Effect.fn("codrHub.tailnetMesh.linkOrigin")(function* (origin: string) {
   const descriptorText = yield* readHttpText(
     HttpClientRequest.get(new URL("/.well-known/t3/environment", origin).toString()),
   );
   if (descriptorText === null) return null;
   const decoded = yield* decodeDescriptor(parseJson(descriptorText)).pipe(Effect.option);
   if (Option.isNone(decoded)) return null;
-  if (publishedReplyOrigin === null) return null;
-  const nowMs = yield* Clock.currentTimeMillis;
-  const nonce = echoes.issue({
-    peerDns: peer.dnsName,
-    replyHost: selfDns,
-    nowMs,
-  });
-  const replyOrigin = publishedReplyOrigin;
-  const witnessText = yield* readHttpText(
-    HttpClientRequest.post(new URL(`${MESH_PREFIX}/tailnet/witness`, origin).toString()).pipe(
-      HttpClientRequest.bodyJsonUnsafe({ nonce, replyOrigin }),
-    ),
+  const joinText = yield* readHttpText(
+    HttpClientRequest.post(new URL(JOIN_PATH, origin).toString()),
   );
-  if (witnessText === null) return null;
-  const witness = parseJson(witnessText);
-  if (!isRecord(witness) || typeof witness.accessToken !== "string") return null;
-  const token = accessToken(witness.accessToken);
+  if (joinText === null) return null;
+  const joined = parseJson(joinText);
+  if (!isRecord(joined) || typeof joined.accessToken !== "string") return null;
+  const token = accessToken(joined.accessToken);
   if (token === null) return null;
   const httpBaseUrl = normalizeHttpBaseUrl(origin);
   return {
@@ -584,18 +445,19 @@ const linkOrigin = Effect.fn("codrHub.tailnetMesh.linkOrigin")(function* (
   } satisfies MeshLink;
 });
 
-const linksForPeer = Effect.fn("codrHub.tailnetMesh.linksForPeer")(function* (
-  peer: TailnetPeer,
-  selfDns: MagicDnsName,
-) {
-  const manifestText = yield* readHttpText(
-    HttpClientRequest.get(`https://${peer.dnsName}${MESH_PREFIX}/codr-hub-mesh`),
-  );
-  if (manifestText === null) return [];
-  const origins = parseMeshManifest(parseJson(manifestText), peer.dnsName);
+const linksForPeer = Effect.fn("codrHub.tailnetMesh.linksForPeer")(function* (peer: TailnetPeer) {
+  const bases = [`https://${peer.dnsName}`, `https://${peer.dnsName}:${DEV_SHARE_PORT}`];
+  const manifests: unknown[] = [];
+  for (const base of bases) {
+    const manifestText = yield* readHttpText(
+      HttpClientRequest.get(new URL(`${MESH_PREFIX}/codr-hub-mesh`, `${base}/`).toString()),
+    );
+    if (manifestText !== null) manifests.push(parseJson(manifestText));
+  }
+  const origins = discoverOrigins(peer.dnsName, manifests);
   const links: MeshLink[] = [];
   for (const origin of origins) {
-    const link = yield* linkOrigin(peer, origin, selfDns).pipe(Effect.orElseSucceed(() => null));
+    const link = yield* linkOrigin(origin).pipe(Effect.orElseSucceed(() => null));
     if (link !== null) links.push(link);
   }
   return links;
@@ -605,38 +467,9 @@ export const linkTailnet = Effect.fn("codrHub.tailnetMesh.link")(function* () {
   const statusText = yield* tailscaleStdout(["status", "--json"], STATUS_TIMEOUT);
   if (statusText === null) return { links: [] satisfies MeshLink[] };
   const status = parseJson(statusText);
-  const selfDns = selfDnsName(status);
-  if (selfDns === null || publishedReplyOrigin === null) return { links: [] satisfies MeshLink[] };
-  const groups = yield* Effect.forEach(
-    rosterFromStatus(status),
-    (peer) => linksForPeer(peer, selfDns),
-    { concurrency: 4 },
-  );
+  if (selfPeer(status) === null) return { links: [] satisfies MeshLink[] };
+  const groups = yield* Effect.forEach(rosterFromStatus(status), (peer) => linksForPeer(peer), {
+    concurrency: 4,
+  });
   return { links: groups.flat() };
-});
-
-export const ensureTailnetMeshPath = Effect.fn("codrHub.tailnetMesh.ensurePath")(function* (
-  localPort: number,
-) {
-  const statusText = yield* tailscaleStdout(["status", "--json"], STATUS_TIMEOUT);
-  const selfDns = statusText === null ? null : selfDnsName(parseJson(statusText));
-  if (selfDns === null) return;
-  const config = yield* ServerConfig.ServerConfig;
-  const devOrigin = config.devUrl?.protocol === "https:" ? config.devUrl.origin : null;
-  const serveText = yield* tailscaleStdout(["serve", "status", "--json"], STATUS_TIMEOUT);
-  const serveJson = serveText === null ? null : parseJson(serveText);
-  const existing = selectReplyOrigin(serveJson, selfDns, localPort, devOrigin);
-  if (existing !== null) {
-    publishedReplyOrigin = existing;
-    return;
-  }
-  // Port 443 may already publish another server. A new path there takes
-  // `/.well-known` away from it.
-  if (serveJson !== null && https443Occupied(serveJson, selfDns)) return;
-  const applied = yield* tailscaleStdout(planTailnetServe(localPort), SERVE_TIMEOUT);
-  if (applied === null) {
-    yield* Effect.logWarning("Tailnet mesh path on port 443 was not applied.");
-    return;
-  }
-  publishedReplyOrigin = `https://${selfDns}`;
 });

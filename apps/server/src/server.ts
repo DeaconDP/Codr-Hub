@@ -35,7 +35,6 @@ import {
   httpCompressionLayer,
   untracedRequestsLayer,
 } from "./http.ts";
-import { ensureTailnetMeshPath } from "./codrHub/tailnetMesh.ts";
 import { guardHttpResponseWriteErrors } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
 import { websocketRpcRouteLayer } from "./ws.ts";
@@ -1016,20 +1015,11 @@ const makeServerLayer = Layer.unwrap(
       disableLogger: !config.logWebSocketEvents,
       routerConfig: HTTP_ROUTER_CONFIG,
     }).pipe(Layer.tap(() => Deferred.succeed(routesReady, undefined).pipe(Effect.orDie)));
-    const tailnetMeshPathLayer = Layer.effectDiscard(
-      Effect.gen(function* () {
-        const server = yield* HttpServer.HttpServer;
-        const address = server.address;
-        if (typeof address === "string" || !("port" in address)) return;
-        yield* ensureTailnetMeshPath(address.port);
-      }),
-    );
     const serverApplicationLayer = Layer.mergeAll(
       routesLayer,
       httpListeningLayer,
       runtimeStateLayer.pipe(Layer.provide(launcherLayer)),
       tailscaleServeLayer,
-      tailnetMeshPathLayer,
       cloudDesiredLinkReconcileLayer,
       HeapSnapshot.layer,
     );
