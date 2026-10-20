@@ -308,6 +308,8 @@ import {
   HubError,
   HubImportInput,
   HubImportResult,
+  HubLinkTailnetInput,
+  HubLinkTailnetResult,
   HubOk,
   HubRunAutopilotInput,
   HubRunAutopilotResult,
@@ -503,6 +505,7 @@ export const WS_METHODS = {
   hubImport: "hub.import",
   hubSync: "hub.sync",
   hubRunAutopilot: "hub.runAutopilot",
+  hubLinkTailnet: "hub.linkTailnet",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -1745,6 +1748,11 @@ const WsHubRunAutopilotRpc = Rpc.make(WS_METHODS.hubRunAutopilot, {
   success: HubRunAutopilotResult,
   error: HubRpcError,
 });
+const WsHubLinkTailnetRpc = Rpc.make(WS_METHODS.hubLinkTailnet, {
+  payload: HubLinkTailnetInput,
+  success: HubLinkTailnetResult,
+  error: HubRpcError,
+});
 
 const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess, {
   payload: Schema.Struct({}),
@@ -1840,6 +1848,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHubImportRpc,
   WsHubSyncRpc,
   WsHubRunAutopilotRpc,
+  WsHubLinkTailnetRpc,
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,

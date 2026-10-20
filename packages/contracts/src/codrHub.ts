@@ -9,7 +9,9 @@
  */
 import * as Schema from "effect/Schema";
 
+import { AuthStandardClientScopes } from "./auth.ts";
 import {
+  EnvironmentId,
   IsoDateTime,
   NonNegativeInt,
   ProjectId,
@@ -396,6 +398,43 @@ export const HubRunAutopilotResult = Schema.Struct({
   notes: Schema.Array(Schema.String),
 });
 export type HubRunAutopilotResult = typeof HubRunAutopilotResult.Type;
+
+const scopeLiteral = <const S extends string>(scope: S) => Schema.Literal(scope);
+
+/** The link carries `AuthStandardClientScopes` and nothing else. */
+export const TailnetLinkScopes = Schema.Tuple([
+  scopeLiteral(AuthStandardClientScopes[0]),
+  scopeLiteral(AuthStandardClientScopes[1]),
+  scopeLiteral(AuthStandardClientScopes[2]),
+  scopeLiteral(AuthStandardClientScopes[3]),
+  scopeLiteral(AuthStandardClientScopes[4]),
+]);
+export type TailnetLinkScopes = typeof TailnetLinkScopes.Type;
+
+type TailnetScopesMatch = TailnetLinkScopes extends typeof AuthStandardClientScopes
+  ? typeof AuthStandardClientScopes extends TailnetLinkScopes
+    ? true
+    : never
+  : never;
+true satisfies TailnetScopesMatch;
+
+export const TailnetLink = Schema.Struct({
+  environmentId: EnvironmentId,
+  label: Schema.String,
+  httpBaseUrl: Schema.String,
+  wsBaseUrl: Schema.String,
+  accessToken: Schema.String,
+  scopes: TailnetLinkScopes,
+});
+export type TailnetLink = typeof TailnetLink.Type;
+
+export const HubLinkTailnetInput = Schema.Struct({});
+export type HubLinkTailnetInput = typeof HubLinkTailnetInput.Type;
+
+export const HubLinkTailnetResult = Schema.Struct({
+  links: Schema.Array(TailnetLink),
+});
+export type HubLinkTailnetResult = typeof HubLinkTailnetResult.Type;
 
 export const HubOk = Schema.Struct({ ok: Schema.Literal(true) });
 export type HubOk = typeof HubOk.Type;

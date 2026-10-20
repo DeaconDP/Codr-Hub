@@ -120,6 +120,7 @@ import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts"
 import * as IdAllocator from "./orchestration-v2/IdAllocator.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as CodrHub from "./codrHub/CodrHubService.ts";
+import { linkTailnet } from "./codrHub/tailnetMesh.ts";
 import {
   archivedShellStreamItemFromThreadShell,
   buildActiveShellSnapshot,
@@ -2117,6 +2118,10 @@ const makeWsRpcLayer = (
           }),
         [WS_METHODS.hubRunAutopilot]: (_input) =>
           observeRpcEffect(WS_METHODS.hubRunAutopilot, codrHub.runAutopilot(), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubLinkTailnet]: (_input) =>
+          observeRpcEffect(WS_METHODS.hubLinkTailnet, linkTailnet(), {
             "rpc.aggregate": "codrHub",
           }),
         [WS_METHODS.serverProbe]: (_input) =>

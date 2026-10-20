@@ -97,7 +97,7 @@ const resolvePairingTarget = Effect.fn("clientRuntime.connection.onboarding.reso
  * to the LAN one instead of replacing it. Pairing the same address again
  * reuses the id and replaces that route.
  */
-function bearerConnectionId(environmentId: EnvironmentId, httpBaseUrl: string): string {
+export function bearerConnectionId(environmentId: EnvironmentId, httpBaseUrl: string): string {
   return `bearer:${environmentId}:${new URL(httpBaseUrl).origin}`;
 }
 

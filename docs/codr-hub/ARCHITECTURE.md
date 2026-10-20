@@ -11,23 +11,29 @@ Upstream T3 Code lands about 40 commits a day. Every line we change in an upstre
 3. Every upstream file we touch is listed below. If you add a seam, add it here; if you remove one, delete it here.
 4. No SQLite migrations. Portfolio data lives in files (see [Data](#data)), so T3's migration numbering is never contested.
 
-| Upstream file                                        | Hook                                                                                    |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `packages/contracts/src/index.ts`                    | `export * from "./codrHub.ts"`                                                          |
-| `packages/contracts/src/rpc.ts`                      | `WS_METHODS` hub entries, plus one block of `Rpc.make` definitions added to the group   |
-| `apps/server/src/ws.ts`                              | Hub handlers block                                                                      |
-| `apps/server/src/auth/RpcAuthorization.ts`           | Scope per hub method                                                                    |
-| `apps/server/src/orchestration-v2/runtimeLayer.ts`   | Provides `CodrHubService`                                                               |
-| `packages/client-runtime/src/rpc/client.ts`          | Hub subscription tag                                                                    |
-| `packages/client-runtime/src/state/server.ts`        | Hub atoms                                                                               |
-| `apps/web/src/components/sidebar/SidebarChrome.tsx`  | "Hub" utility item                                                                      |
-| `apps/web/src/components/sidebar/mainAppLocation.ts` | `/hub` counts as a utility page                                                         |
-| `apps/web/src/routeTree.gen.ts`                      | Generated; regenerates on build                                                         |
-| `AGENTS.md`                                          | Codr-Hub section at the end                                                             |
-| `README.md`                                          | One-click `run.command` / `run.bat` note after `vp i`                                   |
-| `docs/operations/development.md`                     | One-click launcher paragraph (sticky 5733 / 13773)                                      |
-| `apps/mobile/app.config.ts`                          | `T3CODE_IOS_APPLE_TEAM_ID` plus existing personal-team bundle/capability path           |
-| `apps/web/src/components/chat/MessagesTimeline.tsx`  | `LiveActivityRow` ref uses `useLiveStageCueRef` (E9 stage cues, `apps/web/src/codrHub`) |
+| Upstream file                                          | Hook                                                                                    |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `packages/contracts/src/index.ts`                      | `export * from "./codrHub.ts"`                                                          |
+| `packages/contracts/src/rpc.ts`                        | `WS_METHODS` hub entries, plus one block of `Rpc.make` definitions added to the group   |
+| `apps/server/src/ws.ts`                                | Hub handlers block                                                                      |
+| `apps/server/src/auth/RpcAuthorization.ts`             | Scope per hub method                                                                    |
+| `apps/server/src/orchestration-v2/runtimeLayer.ts`     | Provides `CodrHubService`                                                               |
+| `packages/client-runtime/src/rpc/client.ts`            | Hub subscription tag                                                                    |
+| `packages/client-runtime/src/state/server.ts`          | Hub atoms                                                                               |
+| `apps/web/src/components/sidebar/SidebarChrome.tsx`    | "Hub" utility item                                                                      |
+| `apps/web/src/components/sidebar/mainAppLocation.ts`   | `/hub` counts as a utility page                                                         |
+| `apps/web/src/routeTree.gen.ts`                        | Generated; regenerates on build                                                         |
+| `AGENTS.md`                                            | Codr-Hub section at the end                                                             |
+| `README.md`                                            | One-click `run.command` / `run.bat` note after `vp i`                                   |
+| `docs/operations/development.md`                       | One-click launcher paragraph (sticky 5733 / 13773)                                      |
+| `apps/mobile/app.config.ts`                            | `T3CODE_IOS_APPLE_TEAM_ID` plus existing personal-team bundle/capability path           |
+| `apps/web/src/components/chat/MessagesTimeline.tsx`    | `LiveActivityRow` ref uses `useLiveStageCueRef` (E9 stage cues, `apps/web/src/codrHub`) |
+| `apps/server/src/http.ts`                              | Tailnet mesh well-known routes                                                          |
+| `apps/server/src/server.ts`                            | Mesh route layer, and the tailnet path on startup                                       |
+| `apps/web/src/connection/runtime.ts`                   | `linkTailnetMeshLayer`                                                                  |
+| `apps/mobile/src/connection/runtime.ts`                | `linkTailnetMeshLayer`                                                                  |
+| `packages/client-runtime/src/connection/onboarding.ts` | export `bearerConnectionId`                                                             |
+| `packages/client-runtime/package.json`                 | `./codrHub/linkTailnetMesh` export                                                      |
 
 ### Syncing upstream
 
@@ -96,3 +102,5 @@ All nodes sharing a subscription must run the ownership-aware version and use th
 Ownership lives on `refs/heads/codr-hub-quota/<account hash>`, outside `main`, with only a version, stable node ID, and display name. Atomic creation uses an explicit empty-ref lease; release uses the observed object ID as a lease. Never replace an existing owner or delete a ref without that comparison. Local `refs/codr-hub-quota/<remote hash>/<account hash>` record claim intent before a push, so even a lost push reply can be recovered and released after restart. Preserve these local refs with the portfolio repository.
 
 Owners do not expire. Launches pause if the remote cannot verify ownership. Turning Autopilot off releases this node's claims on a subsequent minute tick only after its launched work is finished and settled or archived. Thread-state failures block release. Changing the remote uses the same drain requirement and releases claims on the old remote first. An offline owner must be recovered for normal handover; automatic timeout takeover would permit paused work to resume alongside another owner.
+
+Tailscale Serve terminates HTTPS and delivers the request to 127.0.0.1. This server does not read X-Forwarded-For, so the socket is not the peer. The peer mints a standard-scope token only after the introducer's MagicDNS name echoes the one-time nonce, and keeps that token in memory under the introducer's node id.

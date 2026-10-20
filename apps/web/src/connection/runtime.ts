@@ -1,4 +1,5 @@
 import { Connection } from "@t3tools/client-runtime/connection";
+import { linkTailnetMeshLayer } from "@t3tools/client-runtime/codrHub/linkTailnetMesh";
 import { ShellSnapshotLoader } from "@t3tools/client-runtime/state/shell";
 import {
   boundedThreadSnapshotLoaderLayer,
@@ -51,8 +52,10 @@ const providedClientConnectionLayer = snapshotLoaderLayer.pipe(
   ),
 );
 
-const connectionLayer = backgroundActivityReporterLayer.pipe(
-  Layer.provideMerge(providedClientConnectionLayer),
+const connectionLayer = linkTailnetMeshLayer.pipe(
+  Layer.provideMerge(
+    backgroundActivityReporterLayer.pipe(Layer.provideMerge(providedClientConnectionLayer)),
+  ),
 );
 
 export const connectionAtomRuntime: Atom.AtomRuntime<

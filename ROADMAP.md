@@ -15,6 +15,7 @@ Portfolio store (git-backed), strategy list, project table, Deez-PM import, paci
 - Shared subscription pacing implemented: one owner per provider/account, claimed atomically through the portfolio remote. Scheduled launches, Run once, and automatic banked resets require verified ownership; local instances share concurrency. Ownership survives restarts and releases after Autopilot is off and its work drains. Verified with 16 new ownership/integration tests and all 52 focused Hub tests.
 - Verify ownership and handover between real mesh nodes (owner acceptance pending).
 - Hub view across environments: client-side union of live Hub snapshots by project id, with per-node checkout overlay. Owner mesh acceptance can stay pending.
+- Other Codr-Hub machines on the same Tailscale account are saved while the app is open.
 
 ### E3. Fold in Deez-Project-Manager
 

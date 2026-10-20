@@ -50,6 +50,7 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Serialize portfolio mutations with sync and snapshot reload, including a failed push after a successful pull
 - [x] Focused multi-node git and service concurrency tests (15 passed), server typecheck, targeted lint
 - [ ] Owner: verify Save & sync on each real mesh node
+- [ ] E2: other Codr-Hub machines on the same Tailscale account show up while the app is open
 
 ## E2: Shared subscription pacing
 
