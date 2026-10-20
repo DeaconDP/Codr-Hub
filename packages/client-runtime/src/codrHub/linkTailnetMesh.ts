@@ -1,7 +1,9 @@
 import { WS_METHODS, type EnvironmentId } from "@t3tools/contracts";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
@@ -102,29 +104,11 @@ const savedRoutes = Effect.fn("codrHub.linkTailnetMesh.savedRoutes")(function* (
   return saved;
 });
 
-export const linkTailnetMesh = Effect.fn("codrHub.linkTailnetMesh")(function* () {
+const linkOnce = Effect.fn("codrHub.linkTailnetMesh.once")(function* () {
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-  const introducerId = yield* SubscriptionRef.changes(registry.entries).pipe(
-    Stream.switchMap((entries) => {
-      const ids = [...entries.keys()];
-      if (ids.length === 0) return Stream.never;
-      return Stream.mergeAll(
-        ids.map((id) =>
-          registry.stateChanges(id).pipe(
-            Stream.map(() => undefined),
-            Stream.catch(() => Stream.never),
-          ),
-        ),
-        { concurrency: "unbounded" },
-      );
-    }),
-    Stream.mapEffect(() => currentIntroducer()),
-    Stream.filter((id): id is EnvironmentId => id !== undefined),
-    Stream.take(1),
-    Stream.runHead,
-  );
-  if (Option.isNone(introducerId)) return;
-  const result = yield* registry.run(introducerId.value, request(WS_METHODS.hubLinkTailnet, {}));
+  const introducerId = yield* currentIntroducer();
+  if (introducerId === undefined) return;
+  const result = yield* registry.run(introducerId, request(WS_METHODS.hubLinkTailnet, {}));
   const saved = yield* savedRoutes();
   for (const link of result.links) {
     if (catalogDecision(saved, link) === "skip") continue;
@@ -149,6 +133,36 @@ export const linkTailnetMesh = Effect.fn("codrHub.linkTailnetMesh")(function* ()
       )
       .pipe(Effect.catch(() => Effect.logWarning("Could not save a Tailscale Codr-Hub machine.")));
   }
+});
+
+export const linkTailnetMesh = Effect.fn("codrHub.linkTailnetMesh")(function* () {
+  const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+  const introducerId = yield* SubscriptionRef.changes(registry.entries).pipe(
+    Stream.switchMap((entries) => {
+      const ids = [...entries.keys()];
+      if (ids.length === 0) return Stream.never;
+      return Stream.mergeAll(
+        ids.map((id) =>
+          registry.stateChanges(id).pipe(
+            Stream.map(() => undefined),
+            Stream.catch(() => Stream.never),
+          ),
+        ),
+        { concurrency: "unbounded" },
+      );
+    }),
+    Stream.mapEffect(() => currentIntroducer()),
+    Stream.filter((id): id is EnvironmentId => id !== undefined),
+    Stream.take(1),
+    Stream.runHead,
+  );
+  if (Option.isNone(introducerId)) return;
+  // A machine that starts later still gets linked. A repeat with the same
+  // token does not register again.
+  yield* linkOnce().pipe(
+    Effect.catchCause(() => Effect.logWarning("Could not link Tailscale Codr-Hub machines.")),
+    Effect.repeat(Schedule.spaced(Duration.seconds(60))),
+  );
 });
 
 export const linkTailnetMeshLayer = Layer.effectDiscard(
