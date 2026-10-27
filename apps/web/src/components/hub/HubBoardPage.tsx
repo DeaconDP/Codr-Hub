@@ -329,7 +329,7 @@ function BoardColumn(props: {
   readonly column: HubBoardColumn;
   readonly tasks: ReadonlyArray<HubTask>;
   readonly busy: boolean;
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly onMoveToColumn: (taskId: string, toColumn: HubBoardColumn) => void;
   readonly onEdit: (task: HubTask) => void;
   readonly onDelete: (taskId: string) => void;

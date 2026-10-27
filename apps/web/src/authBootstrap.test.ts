@@ -248,7 +248,9 @@ describe("resolveInitialServerAuthGateState", () => {
       authenticatedSession(LOOPBACK_AUTH),
     );
     await installAuthApi({ session: nextSession });
-    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL) => new Response("{}", { status: 200 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const { resolveInitialServerAuthGateState } = await import("./environments/primary");
 
