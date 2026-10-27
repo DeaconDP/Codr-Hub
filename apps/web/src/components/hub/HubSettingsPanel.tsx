@@ -96,7 +96,70 @@ export function HubSettingsPanel(props: {
           </ToggleGroup>
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`${id}-target`}>Spend target before reset (%)</Label>
+          <Label htmlFor={`${id}-claude`}>Claude</Label>
+          <Input
+            id={`${id}-claude`}
+            size="compact"
+            type="number"
+            min={10}
+            max={100}
+            defaultValue={settings.paceTargets.claudeAgent}
+            key={settings.paceTargets.claudeAgent}
+            onBlur={(event) =>
+              commitNumber(
+                event.target.value,
+                settings.paceTargets.claudeAgent,
+                { min: 10, max: 100 },
+                (value) => void update.run({ paceTargets: { claudeAgent: value } }),
+              )
+            }
+            onKeyDown={blurOnEnter}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`${id}-cursor`}>Cursor</Label>
+          <Input
+            id={`${id}-cursor`}
+            size="compact"
+            type="number"
+            min={10}
+            max={100}
+            defaultValue={settings.paceTargets.cursor}
+            key={settings.paceTargets.cursor}
+            onBlur={(event) =>
+              commitNumber(
+                event.target.value,
+                settings.paceTargets.cursor,
+                { min: 10, max: 100 },
+                (value) => void update.run({ paceTargets: { cursor: value } }),
+              )
+            }
+            onKeyDown={blurOnEnter}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`${id}-openai`}>OpenAI</Label>
+          <Input
+            id={`${id}-openai`}
+            size="compact"
+            type="number"
+            min={10}
+            max={100}
+            defaultValue={settings.paceTargets.codex}
+            key={settings.paceTargets.codex}
+            onBlur={(event) =>
+              commitNumber(
+                event.target.value,
+                settings.paceTargets.codex,
+                { min: 10, max: 100 },
+                (value) => void update.run({ paceTargets: { codex: value } }),
+              )
+            }
+            onKeyDown={blurOnEnter}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`${id}-target`}>Other providers (%)</Label>
           <Input
             id={`${id}-target`}
             size="compact"

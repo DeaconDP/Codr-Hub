@@ -1,4 +1,9 @@
-import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  DEFAULT_HUB_SETTINGS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  paceTargetFor,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 
@@ -109,5 +114,17 @@ describe("codr-hub pacing", () => {
     ).pace;
     expect(plain.state).toBe("on_pace");
     expect(withCredit.state).toBe("behind");
+  });
+
+  it("uses a driver's pace target, and the fallback percent for any other driver", () => {
+    const settings = {
+      ...DEFAULT_HUB_SETTINGS,
+      paceTargetPercent: 90,
+      paceTargets: { claudeAgent: 95, cursor: 95, codex: 70 },
+    };
+    expect(paceTargetFor(settings, ProviderDriverKind.make("claudeAgent"))).toBe(95);
+    expect(paceTargetFor(settings, ProviderDriverKind.make("cursor"))).toBe(95);
+    expect(paceTargetFor(settings, ProviderDriverKind.make("codex"))).toBe(70);
+    expect(paceTargetFor(settings, ProviderDriverKind.make("grok"))).toBe(90);
   });
 });
