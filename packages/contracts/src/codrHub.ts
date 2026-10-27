@@ -7,6 +7,7 @@
  *
  * @module codrHub
  */
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { AuthStandardClientScopes } from "./auth.ts";
@@ -71,6 +72,12 @@ export const HUB_AUTONOMY_LABELS: Record<HubAutonomy, string> = {
   100: "Full auto",
 };
 
+export const HubLane = Schema.Literals(["immersion", "automation", "publicity"]);
+export type HubLane = typeof HubLane.Type;
+
+export const HubJobKind = Schema.Literals(["dev", "edit", "writing", "image"]);
+export type HubJobKind = typeof HubJobKind.Type;
+
 export const HubProjectHost = Schema.Struct({ path: TrimmedNonEmptyString });
 export type HubProjectHost = typeof HubProjectHost.Type;
 
@@ -93,6 +100,8 @@ export const HubProject = Schema.Struct({
   sortIndex: Schema.Number,
   favorite: Schema.Boolean,
   archived: Schema.Boolean,
+  lane: Schema.NullOr(HubLane).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  jobKind: HubJobKind.pipe(Schema.withDecodingDefault(Effect.succeed("dev" as const))),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -145,6 +154,21 @@ export const HUB_DEFAULT_STAGE_PROMPTS: Record<HubSdlcStage, string> = {
     "Keep the project healthy: update dependencies with care, fix reported bugs, and remove dead code. Note anything larger in ROADMAP.md.",
 };
 
+const HubPaceTarget = Schema.Number.check(Schema.isBetween({ minimum: 10, maximum: 100 }));
+
+export const HubPaceTargets = Schema.Struct({
+  claudeAgent: HubPaceTarget,
+  cursor: HubPaceTarget,
+  codex: HubPaceTarget,
+});
+export type HubPaceTargets = typeof HubPaceTargets.Type;
+
+export const DEFAULT_HUB_PACE_TARGETS: HubPaceTargets = {
+  claudeAgent: 95,
+  cursor: 95,
+  codex: 95,
+};
+
 export const HubSettings = Schema.Struct({
   sdlcMode: HubSdlcMode,
   /** Share of each window the autopilot aims to have used at reset. */
@@ -154,6 +178,10 @@ export const HubSettings = Schema.Struct({
   autoDeployBankedResets: Schema.Boolean,
   /** Per-stage prompt overrides; missing stages use the built-in template. */
   stagePrompts: Schema.Record(Schema.String, Schema.String),
+  /** Pace target for Claude, Cursor, and Codex. Other drivers use `paceTargetPercent`. */
+  paceTargets: HubPaceTargets.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_HUB_PACE_TARGETS)),
+  ),
 });
 export type HubSettings = typeof HubSettings.Type;
 
@@ -163,6 +191,7 @@ export const DEFAULT_HUB_SETTINGS: HubSettings = {
   maxConcurrentRuns: 2,
   autoDeployBankedResets: false,
   stagePrompts: {},
+  paceTargets: DEFAULT_HUB_PACE_TARGETS,
 };
 
 export const HubLaunchRecord = Schema.Struct({
@@ -186,6 +215,40 @@ export const HubGitGlance = Schema.Struct({
 });
 export type HubGitGlance = typeof HubGitGlance.Type;
 
+const HandoffIdentity = {
+  version: Schema.Literal(1),
+  projectId: TrimmedNonEmptyString,
+  updatedAt: IsoDateTime,
+  sourceThreadId: ThreadId,
+  sourceStage: HubSdlcStage,
+  nodeName: Schema.String,
+  finishedAt: IsoDateTime,
+};
+
+/** One project's test handoff. Cleared rows stay on disk so a later finish cannot reopen them. */
+export const TestHandoff = Schema.Union([
+  Schema.Struct({ ...HandoffIdentity, kind: Schema.Literal("ready") }),
+  Schema.Struct({
+    ...HandoffIdentity,
+    kind: Schema.Literal("fix"),
+    note: Schema.String.check(Schema.isMaxLength(500)),
+    notedAt: IsoDateTime,
+  }),
+  Schema.Struct({
+    ...HandoffIdentity,
+    kind: Schema.Literal("cleared"),
+    reason: Schema.Literal("ship"),
+  }),
+  Schema.Struct({
+    ...HandoffIdentity,
+    kind: Schema.Literal("cleared"),
+    reason: Schema.Literal("consumed"),
+    note: Schema.String,
+    byThreadId: ThreadId,
+  }),
+]);
+export type TestHandoff = typeof TestHandoff.Type;
+
 export const HubProjectView = Schema.Struct({
   project: HubProject,
   /** Checkout on this node, if any. */
@@ -196,6 +259,7 @@ export const HubProjectView = Schema.Struct({
   awaitingReview: NonNegativeInt,
   running: NonNegativeInt,
   lastLaunchAt: Schema.NullOr(IsoDateTime),
+  handoff: Schema.NullOr(TestHandoff).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });
 export type HubProjectView = typeof HubProjectView.Type;
 
@@ -227,6 +291,17 @@ export const HubSyncStatus = Schema.Struct({
 });
 export type HubSyncStatus = typeof HubSyncStatus.Type;
 
+export const HubFleetPhase = Schema.Literals(["current", "waiting", "updating", "stuck"]);
+export type HubFleetPhase = typeof HubFleetPhase.Type;
+
+export const HubFleetReport = Schema.Struct({
+  phase: HubFleetPhase,
+  detail: Schema.String,
+  sha: Schema.NullOr(Schema.String),
+  at: IsoDateTime,
+});
+export type HubFleetReport = typeof HubFleetReport.Type;
+
 export const HubSnapshot = Schema.Struct({
   nodeName: Schema.String,
   autopilotEnabled: Schema.Boolean,
@@ -238,6 +313,7 @@ export const HubSnapshot = Schema.Struct({
   recentLaunches: Schema.Array(HubLaunchRecord),
   sync: HubSyncStatus,
   deezProjectManagerPath: Schema.NullOr(Schema.String),
+  fleet: Schema.optional(HubFleetReport),
 });
 export type HubSnapshot = typeof HubSnapshot.Type;
 
@@ -258,8 +334,18 @@ export type HubNodeCheckout = {
 /** Client-side union of live Hub rows. Not on the wire. */
 export type HubMergedProjectView = {
   readonly project: HubProject;
+  readonly handoff: TestHandoff | null;
   readonly nodes: ReadonlyArray<HubNodeCheckout>;
 };
+
+function preferHandoff(
+  current: TestHandoff | null,
+  incoming: TestHandoff | null,
+): TestHandoff | null {
+  if (incoming === null) return current;
+  if (current === null || incoming.updatedAt > current.updatedAt) return incoming;
+  return current;
+}
 
 /**
  * Union by `project.id`. Overlay path/git/running/pathExists per `snapshot.nodeName`.
@@ -271,7 +357,10 @@ export type HubMergedProjectView = {
 export function mergeHubProjectViews(
   snapshots: ReadonlyArray<HubSnapshot>,
 ): HubMergedProjectView[] {
-  const byId = new Map<string, { project: HubProject; nodes: Map<string, HubNodeCheckout> }>();
+  const byId = new Map<
+    string,
+    { project: HubProject; handoff: TestHandoff | null; nodes: Map<string, HubNodeCheckout> }
+  >();
   for (const snapshot of snapshots) {
     for (const view of snapshot.projects) {
       const existing = byId.get(view.project.id);
@@ -289,11 +378,16 @@ export function mergeHubProjectViews(
         existing === undefined || view.project.updatedAt > existing.project.updatedAt
           ? view.project
           : existing.project;
-      byId.set(view.project.id, { project, nodes });
+      byId.set(view.project.id, {
+        project,
+        handoff: preferHandoff(existing?.handoff ?? null, view.handoff),
+        nodes,
+      });
     }
   }
   return [...byId.values()].map((entry) => ({
     project: entry.project,
+    handoff: entry.handoff,
     nodes: [...entry.nodes.values()],
   }));
 }
@@ -311,7 +405,28 @@ export function hubProjectViewForNode(
     awaitingReview: node?.awaitingReview ?? 0,
     running: node?.running ?? 0,
     lastLaunchAt: node?.lastLaunchAt ?? null,
+    handoff: merged.handoff,
   };
+}
+
+export function projectMatchesLane(
+  project: { readonly lane: HubLane | null },
+  lane: HubLane | null,
+): boolean {
+  return lane === null || project.lane === lane;
+}
+
+export function paceTargetFor(settings: HubSettings, driver: ProviderDriverKind): number {
+  switch (driver) {
+    case "claudeAgent":
+      return settings.paceTargets.claudeAgent;
+    case "cursor":
+      return settings.paceTargets.cursor;
+    case "codex":
+      return settings.paceTargets.codex;
+    default:
+      return settings.paceTargetPercent;
+  }
 }
 
 export function mergedProjectLastLaunchAt(merged: HubMergedProjectView): string | null {
@@ -345,6 +460,8 @@ export const HubUpsertProjectInput = Schema.Struct({
   sortIndex: Schema.optional(Schema.Number),
   favorite: Schema.optional(Schema.Boolean),
   archived: Schema.optional(Schema.Boolean),
+  lane: Schema.optional(Schema.NullOr(HubLane)),
+  jobKind: Schema.optional(HubJobKind),
 });
 export type HubUpsertProjectInput = typeof HubUpsertProjectInput.Type;
 
@@ -361,7 +478,27 @@ export const HubUpdateSettingsInput = Schema.Struct({
   maxConcurrentRuns: Schema.optional(HubSettings.fields.maxConcurrentRuns),
   autoDeployBankedResets: Schema.optional(Schema.Boolean),
   stagePrompts: Schema.optional(HubSettings.fields.stagePrompts),
+  paceTargets: Schema.optional(
+    Schema.Struct({
+      claudeAgent: Schema.optional(HubPaceTarget),
+      cursor: Schema.optional(HubPaceTarget),
+      codex: Schema.optional(HubPaceTarget),
+    }),
+  ),
 });
+
+export const HubRecordTestVerdictInput = Schema.Union([
+  Schema.Struct({
+    projectId: TrimmedNonEmptyString,
+    verdict: Schema.Literal("ship"),
+  }),
+  Schema.Struct({
+    projectId: TrimmedNonEmptyString,
+    verdict: Schema.Literal("fix"),
+    note: TrimmedNonEmptyString.check(Schema.isMaxLength(500)),
+  }),
+]);
+export type HubRecordTestVerdictInput = typeof HubRecordTestVerdictInput.Type;
 export type HubUpdateSettingsInput = typeof HubUpdateSettingsInput.Type;
 
 export const HubSetNodeInput = Schema.Struct({

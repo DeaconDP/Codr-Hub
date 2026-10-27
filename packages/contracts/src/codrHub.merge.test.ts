@@ -1,13 +1,19 @@
+import * as Schema from "effect/Schema";
+
+import { ThreadId } from "./baseSchemas.ts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   DEFAULT_HUB_SETTINGS,
+  HubProject as HubProjectSchema,
+  HubProjectView as HubProjectViewSchema,
   hubProjectViewForNode,
   mergeHubProjectViews,
   mergedProjectLastLaunchAt,
   type HubProject,
   type HubProjectView,
   type HubSnapshot,
+  type TestHandoff,
 } from "./codrHub.ts";
 
 const project = (overrides: Partial<HubProject>): HubProject => ({
@@ -27,6 +33,8 @@ const project = (overrides: Partial<HubProject>): HubProject => ({
   sortIndex: 0,
   favorite: false,
   archived: false,
+  lane: null,
+  jobKind: "dev",
   createdAt: "2026-10-01T00:00:00.000Z",
   updatedAt: "2026-10-01T00:00:00.000Z",
   ...overrides,
@@ -39,6 +47,7 @@ const view = (overrides: Partial<HubProjectView> & { project: HubProject }): Hub
   awaitingReview: 0,
   running: 0,
   lastLaunchAt: null,
+  handoff: null,
   ...overrides,
 });
 
@@ -124,6 +133,7 @@ describe("mergeHubProjectViews", () => {
     ).toEqual([
       {
         project: adaProject,
+        handoff: null,
         nodes: [
           {
             nodeName: "Steve",
@@ -147,6 +157,7 @@ describe("mergeHubProjectViews", () => {
       },
       {
         project: project({ id: "beta", name: "Beta", updatedAt: "2026-10-01T00:00:00.000Z" }),
+        handoff: null,
         nodes: [
           {
             nodeName: "Ada",
@@ -179,6 +190,7 @@ describe("mergeHubProjectViews", () => {
     ).toEqual([
       {
         project: first,
+        handoff: null,
         nodes: [
           {
             nodeName: "Steve",
@@ -219,6 +231,7 @@ describe("hubProjectViewForNode", () => {
       awaitingReview: 0,
       running: 0,
       lastLaunchAt: null,
+      handoff: null,
     });
     expect(hubProjectViewForNode(merged, "Ada").running).toBe(1);
     expect(hubProjectViewForNode(merged, "Missing")).toEqual({
@@ -229,7 +242,86 @@ describe("hubProjectViewForNode", () => {
       awaitingReview: 0,
       running: 0,
       lastLaunchAt: null,
+      handoff: null,
     });
     expect(mergedProjectLastLaunchAt(merged)).toBe(null);
+  });
+
+  it("keeps the newer handoff, and a value beats null", () => {
+    const older: TestHandoff = {
+      version: 1,
+      kind: "ready",
+      projectId: "alpha",
+      updatedAt: "2026-10-02T00:00:00.000Z",
+      sourceThreadId: ThreadId.make("thread-old"),
+      sourceStage: "develop",
+      nodeName: "Steve",
+      finishedAt: "2026-10-02T00:00:00.000Z",
+    };
+    const newer: TestHandoff = { ...older, updatedAt: "2026-10-04T00:00:00.000Z", nodeName: "Ada" };
+    const merged = mergeHubProjectViews([
+      snapshot({
+        nodeName: "Steve",
+        projects: [view({ project: project({}), handoff: older })],
+      }),
+      snapshot({
+        nodeName: "Ada",
+        projects: [view({ project: project({}), handoff: newer })],
+      }),
+    ])[0]!;
+    expect(merged.handoff).toEqual(newer);
+    expect(hubProjectViewForNode(merged, "Steve").handoff).toEqual(newer);
+
+    const valueBeatsNull = mergeHubProjectViews([
+      snapshot({
+        nodeName: "Ada",
+        projects: [
+          view({ project: project({ updatedAt: "2026-10-09T00:00:00.000Z" }), handoff: null }),
+        ],
+      }),
+      snapshot({
+        nodeName: "Steve",
+        projects: [view({ project: project({}), handoff: older })],
+      }),
+    ])[0]!;
+    expect(valueBeatsNull.handoff).toEqual(older);
+  });
+});
+
+describe("HubProject decode", () => {
+  it("decodes an old project JSON object that omits lane and jobKind", () => {
+    const decoded = Schema.decodeSync(HubProjectSchema)({
+      id: "alpha",
+      name: "Alpha",
+      priority: "medium",
+      status: "active",
+      stage: "develop",
+      strategyId: null,
+      category: null,
+      tags: [],
+      repoUrl: null,
+      notes: "",
+      hosts: {},
+      autonomy: 0,
+      reviewBudget: 2,
+      sortIndex: 0,
+      favorite: false,
+      archived: false,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    });
+    expect(decoded.lane).toBeNull();
+    expect(decoded.jobKind).toBe("dev");
+
+    const view = Schema.decodeSync(HubProjectViewSchema)({
+      project: decoded,
+      localPath: null,
+      pathExists: false,
+      git: null,
+      awaitingReview: 0,
+      running: 0,
+      lastLaunchAt: null,
+    });
+    expect(view.handoff).toBeNull();
   });
 });
