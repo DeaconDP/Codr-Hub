@@ -35,6 +35,9 @@ Upstream T3 Code lands about 40 commits a day. Every line we change in an upstre
 | `apps/mobile/src/connection/runtime.ts`                | `linkTailnetMeshLayer`                                                                  |
 | `packages/client-runtime/src/connection/onboarding.ts` | export `bearerConnectionId`                                                             |
 | `packages/client-runtime/package.json`                 | `./codrHub/linkTailnetMesh` export                                                      |
+| `apps/web/src/authBootstrap.test.ts`                   | Tailnet join test                                                                       |
+| `pnpm-workspace.yaml`                                  | `patchedDependencies` entry for `expo-modules-jsi@58.0.7` (Swift 6.4 patch)             |
+| `pnpm-lock.yaml`                                       | Regenerated for the `expo-modules-jsi` patch hash                                       |
 
 ### Syncing upstream
 
