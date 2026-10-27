@@ -41,6 +41,7 @@
     },
     "./codrHub/linkTailnetMesh": {
       "types": "./src/codrHub/linkTailnetMesh.ts",
+      "import": "./src/codrHub/linkTailnetMesh.ts",
       "default": "./src/codrHub/linkTailnetMesh.ts"
     },
     "./authorization": {
