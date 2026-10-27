@@ -14,6 +14,8 @@ import {
   HubProject,
   HubSettings,
   HubStrategyPriority,
+  HubTask,
+  TestHandoff,
 } from "@t3tools/contracts";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -50,6 +52,8 @@ export interface PortfolioPaths {
   readonly root: string;
   readonly portfolioDir: string;
   readonly projectsDir: string;
+  readonly handoffsDir: string;
+  readonly tasksDir: string;
   readonly hubFile: string;
   readonly nodeFile: string;
 }
@@ -61,6 +65,8 @@ export const portfolioPaths = (path: Path.Path, stateDir: string): PortfolioPath
     root,
     portfolioDir,
     projectsDir: path.join(portfolioDir, "projects"),
+    handoffsDir: path.join(portfolioDir, "handoffs"),
+    tasksDir: path.join(portfolioDir, "tasks"),
     hubFile: path.join(portfolioDir, "hub.json"),
     nodeFile: path.join(root, "node.json"),
   };
@@ -74,6 +80,8 @@ const isHubError = Schema.is(HubError);
 const decodeHubFile = Schema.decodeUnknownEffect(HubFile);
 const decodeNodeFile = Schema.decodeUnknownEffect(NodeFile);
 const decodeProjectJson = Schema.decodeUnknownEffect(Schema.fromJsonString(HubProject));
+const decodeHandoffJson = Schema.decodeUnknownEffect(Schema.fromJsonString(TestHandoff));
+const decodeTaskJson = Schema.decodeUnknownEffect(Schema.fromJsonString(HubTask));
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
 const toJson = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
@@ -125,10 +133,17 @@ export const readProjects = (paths: PortfolioPaths) =>
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     if (!(yield* fs.exists(paths.projectsDir))) return [];
-    const names = (yield* fs.readDirectory(paths.projectsDir)).filter((name) =>
-      name.endsWith(".json"),
+    const names = (yield* fs.readDirectory(paths.projectsDir)).filter(
+      (name) => name !== "handoffs" && name.endsWith(".json"),
     );
-    const projects = yield* Effect.forEach(names, (name) =>
+    const files: string[] = [];
+    for (const name of names) {
+      const full = path.join(paths.projectsDir, name);
+      const info = yield* fs.stat(full).pipe(Effect.orElseSucceed(() => null));
+      if (info === null || info.type === "Directory") continue;
+      files.push(name);
+    }
+    const projects = yield* Effect.forEach(files, (name) =>
       fs.readFileString(path.join(paths.projectsDir, name)).pipe(
         Effect.flatMap(decodeProjectJson),
         Effect.map((project) => [project]),
@@ -163,6 +178,101 @@ export const writeProject = (paths: PortfolioPaths, project: HubProject) =>
       contents: toJson(project),
     });
   }).pipe(Effect.mapError(hubError(`Could not save project ${project.name}.`)));
+
+export const handoffFile = (path: Path.Path, paths: PortfolioPaths, id: string) =>
+  path.join(paths.handoffsDir, `${id}.json`);
+
+export const readHandoffs = (paths: PortfolioPaths) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    if (!(yield* fs.exists(paths.handoffsDir))) return [];
+    const names = (yield* fs.readDirectory(paths.handoffsDir)).filter((name) =>
+      name.endsWith(".json"),
+    );
+    const handoffs = yield* Effect.forEach(names, (name) =>
+      fs.readFileString(path.join(paths.handoffsDir, name)).pipe(
+        Effect.flatMap(decodeHandoffJson),
+        Effect.map((handoff) => [handoff]),
+        Effect.catch((cause) =>
+          Effect.logWarning("Skipping unreadable Codr-Hub handoff file", { name, cause }).pipe(
+            Effect.as([] as TestHandoff[]),
+          ),
+        ),
+      ),
+    );
+    return handoffs.flat();
+  }).pipe(Effect.mapError(hubError("Could not read test handoffs.")));
+
+export const writeHandoff = (paths: PortfolioPaths, handoff: TestHandoff) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    yield* writeFileStringAtomically({
+      filePath: handoffFile(path, paths, handoff.projectId),
+      contents: toJson(handoff),
+    });
+  }).pipe(Effect.mapError(hubError(`Could not save the test handoff for ${handoff.projectId}.`)));
+
+export const removeHandoff = (paths: PortfolioPaths, id: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const file = handoffFile(path, paths, id);
+    if (yield* fs.exists(file)) yield* fs.remove(file);
+  }).pipe(Effect.mapError(hubError("Could not delete the test handoff.")));
+
+export const taskFile = (path: Path.Path, paths: PortfolioPaths, id: string) =>
+  path.join(paths.tasksDir, `${id}.json`);
+
+export const readTasks = (paths: PortfolioPaths) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    if (!(yield* fs.exists(paths.tasksDir))) return [];
+    const names = (yield* fs.readDirectory(paths.tasksDir)).filter((name) =>
+      name.endsWith(".json"),
+    );
+    const tasks = yield* Effect.forEach(names, (name) =>
+      fs.readFileString(path.join(paths.tasksDir, name)).pipe(
+        Effect.flatMap(decodeTaskJson),
+        Effect.map((task) => [task]),
+        Effect.catch((cause) =>
+          Effect.logWarning("Skipping unreadable Codr-Hub task file", { name, cause }).pipe(
+            Effect.as([] as HubTask[]),
+          ),
+        ),
+      ),
+    );
+    return tasks.flat();
+  }).pipe(Effect.mapError(hubError("Could not read portfolio tasks.")));
+
+export const writeTask = (paths: PortfolioPaths, task: HubTask) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    yield* writeFileStringAtomically({
+      filePath: taskFile(path, paths, task.id),
+      contents: toJson(task),
+    });
+  }).pipe(Effect.mapError(hubError(`Could not save task ${task.id}.`)));
+
+export const removeTask = (paths: PortfolioPaths, id: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const file = taskFile(path, paths, id);
+    if (yield* fs.exists(file)) yield* fs.remove(file);
+  }).pipe(Effect.mapError(hubError("Could not delete the task.")));
+
+/** Deletes every task file for a project. Call under writeLock with project delete. */
+export const removeTasksForProject = (paths: PortfolioPaths, projectId: string) =>
+  Effect.gen(function* () {
+    const tasks = yield* readTasks(paths);
+    yield* Effect.forEach(
+      tasks.filter((task) => task.projectId === projectId),
+      (task) => removeTask(paths, task.id),
+      { discard: true },
+    );
+  });
 
 export const removeProject = (paths: PortfolioPaths, id: string) =>
   Effect.gen(function* () {
@@ -230,6 +340,8 @@ export const ensurePortfolioRepo = (paths: PortfolioPaths) =>
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     yield* fs.makeDirectory(paths.projectsDir, { recursive: true });
+    yield* fs.makeDirectory(paths.handoffsDir, { recursive: true });
+    yield* fs.makeDirectory(paths.tasksDir, { recursive: true });
     if (!(yield* fs.exists(path.join(paths.portfolioDir, ".git")))) {
       yield* gitOk(paths.portfolioDir, ["init", "--quiet", "-b", "main"]);
     }
