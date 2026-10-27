@@ -65,6 +65,17 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 
 - [x] One-click `run.command` / `run.bat` (Node 24, `vp i`, sticky http://localhost:5733)
 
+## E3: Per-project kanban (in progress)
+
+- [x] Contracts: HubTask, columns, HubBoardSnapshot, HubBoardCommand + board RPCs
+- [x] Pure board.ts (reduceBoard / projectBoard / mintRank / Deez map) + focused tests
+- [x] portfolioStore task file I/O + CodrHubService subscribeBoard/applyBoard under writeLock
+- [x] Wire: ws, auth scopes, client-runtime hubBoardLive / hubBoardApply
+- [x] Web: `/hub/projects/$projectId/board` route + streamlined four-column board
+- [x] Deez import: tasks remap UUID→slug, 5→4 columns, skip existing deezCardId
+- [x] Docs: ARCHITECTURE data note + user doc section; fork-seams if new hooks
+- [ ] Verify: focused tests + typecheck touched packages; browser pass with owner go-ahead
+
 ## Next engineering slice
 
 - [x] E2: merge the Hub project view across connected environments

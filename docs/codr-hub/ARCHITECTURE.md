@@ -13,7 +13,7 @@ Upstream T3 Code lands about 40 commits a day. Every line we change in an upstre
 
 | Upstream file                                          | Hook                                                                                    |
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `packages/contracts/src/index.ts`                      | `export * from "./codrHub.ts"`                                                          |
+| `packages/contracts/src/index.ts`                      | `export * from "./codrHub.ts"` and `./codrHubBoard.ts`                                  |
 | `packages/contracts/src/rpc.ts`                        | `WS_METHODS` hub entries, plus one block of `Rpc.make` definitions added to the group   |
 | `apps/server/src/ws.ts`                                | Hub handlers block                                                                      |
 | `apps/server/src/auth/RpcAuthorization.ts`             | Scope per hub method                                                                    |
@@ -53,6 +53,7 @@ The portfolio is a directory of JSON files that is also a git repo:
 <T3 state dir>/codr-hub/portfolio/ git repo (clone of the owner's private repo)
   hub.json                         strategy priorities (ordered) + shared hub settings
   projects/<id>.json               one file per project, so mesh edits rarely conflict
+  tasks/<taskId>.json              per-project kanban cards (not part of HubSnapshot)
 <T3 state dir>/codr-hub/node.json  this node only: node name, autopilot on/off, launch ledger
 <T3 state dir>/codr-hub/quota-node-id  stable identity for pacing ownership on this node
 ```
@@ -60,6 +61,7 @@ The portfolio is a directory of JSON files that is also a git repo:
 `<T3 state dir>` is `~/.t3/userdata` for an installed server, and `<home-dir>/userdata` for a dev server started with `--home-dir`.
 
 - One file per project is deliberate. Two nodes editing different projects never conflict in git.
+- Board tasks live beside projects under `tasks/`. Subscribe with `hub.board.subscribe` for one project; never fold tasks into `HubSnapshot`. Ready-for-testing is planning only — it does not create or clear test handoffs.
 - `node.json` and `quota-node-id` are never synced. Preserve both on restart; do not copy them to another node. The ledger retains running or unreviewed threads beyond its recent-history limit, and pins each launch to its account even when provider instances change. An unreadable ledger blocks pacing and ownership release until repaired.
 - Each write commits locally. If a remote is configured, `sync` does `pull --rebase` then `push`, retrying a competing push up to three attempts. A conflict restores the local branch and is reported to the user; neither node's edits are auto-resolved. Uncommitted edits or a manual git operation block sync.
 - Portfolio mutations and sync share one lock through snapshot reload. Read the current snapshot after acquiring that lock, or a queued edit can overwrite fields just pulled from another node.
