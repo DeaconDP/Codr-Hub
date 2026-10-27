@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import type { HubTask, HubTaskRank } from "@t3tools/contracts";
+import { describe, expect, it } from "@effect/vitest";
 
 import {
   hubTaskFromDeez,
@@ -8,7 +9,6 @@ import {
   reduceBoard,
   type HubBoardTouched,
 } from "./board.ts";
-import type { HubTask, HubTaskRank } from "@t3tools/contracts";
 
 const NOW = "2026-10-27T10:00:00.000Z";
 const rank = (value: string) => value as HubTaskRank;

@@ -97,7 +97,10 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.scheduledTasksRunNow]: AuthOrchestrationOperateScope,
   // Codr-Hub
   [WS_METHODS.hubSubscribe]: AuthOrchestrationReadScope,
+  [WS_METHODS.hubBoardSubscribe]: AuthOrchestrationReadScope,
+  [WS_METHODS.hubBoardApply]: AuthOrchestrationOperateScope,
   [WS_METHODS.hubUpsertProject]: AuthOrchestrationOperateScope,
+  [WS_METHODS.hubRecordTestVerdict]: AuthOrchestrationOperateScope,
   [WS_METHODS.hubDeleteProject]: AuthOrchestrationOperateScope,
   [WS_METHODS.hubSetStrategy]: AuthOrchestrationOperateScope,
   [WS_METHODS.hubUpdateSettings]: AuthOrchestrationOperateScope,
