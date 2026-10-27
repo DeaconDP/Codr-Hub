@@ -20,6 +20,14 @@ const emily = {
   localPath: "/Users/epic/Desktop/Projects/Cursor/Emily-OS",
   githubUrl: "https://github.com/DeaconDP/Emily-OS.git",
   githubRepo: "DeaconDP/Emily-OS",
+  previewUrl: "https://preview.emily.example",
+  liveUrl: "https://emily.example",
+  siteId: "emily-family",
+  surface: "site",
+  stickyPort: 5173,
+  launchCmd: "npm run dev",
+  host: "Ada",
+  openshipProjectId: "ignore-me",
   favorite: true,
   archived: false,
   notes: "",
@@ -43,10 +51,22 @@ describe("codr-hub Deez-PM import", () => {
       category: "Bot",
       tags: ["Web"],
       repoUrl: "https://github.com/DeaconDP/Emily-OS.git",
-      hosts: { Steve: { path: "/Users/epic/Desktop/Projects/Cursor/Emily-OS" } },
+      previewUrl: "https://preview.emily.example",
+      liveUrl: "https://emily.example",
+      siteId: "emily-family",
+      surface: "site",
+      hosts: {
+        Steve: {
+          path: "/Users/epic/Desktop/Projects/Cursor/Emily-OS",
+          stickyPort: 5173,
+          launchCmd: "npm run dev",
+        },
+      },
       autonomy: 0,
       favorite: true,
     });
+    expect(project).not.toHaveProperty("openshipProjectId");
+    expect(project).not.toHaveProperty("host");
   });
 
   it("archives Deez-PM's Delete status and tolerates unknown values", () => {
@@ -71,16 +91,49 @@ describe("codr-hub Deez-PM import", () => {
       priority: "critical" as const,
       hosts: {},
       repoUrl: null,
+      previewUrl: null,
+      liveUrl: "https://owner.live",
+      siteId: null,
+      surface: "",
     };
     const second = mergeDeezImport([edited], [emily], context);
     expect(second).toMatchObject({ imported: 0, updated: 1, skipped: 0 });
     expect(second.upserts[0]).toMatchObject({
       priority: "critical",
-      hosts: { Steve: { path: emily.localPath } },
+      hosts: {
+        Steve: {
+          path: emily.localPath,
+          stickyPort: 5173,
+          launchCmd: "npm run dev",
+        },
+      },
       repoUrl: emily.githubUrl,
+      previewUrl: emily.previewUrl,
+      liveUrl: "https://owner.live",
+      siteId: emily.siteId,
+      surface: emily.surface,
     });
 
-    const third = mergeDeezImport([second.upserts[0]!], [emily], context);
+    const withHost = second.upserts[0]!;
+    const hostOnlyGap = {
+      ...withHost,
+      hosts: {
+        Steve: {
+          path: emily.localPath,
+          stickyPort: null,
+          launchCmd: null,
+        },
+      },
+    };
+    const fillSticky = mergeDeezImport([hostOnlyGap], [emily], context);
+    expect(fillSticky).toMatchObject({ imported: 0, updated: 1, skipped: 0 });
+    expect(fillSticky.upserts[0]?.hosts.Steve).toMatchObject({
+      path: emily.localPath,
+      stickyPort: 5173,
+      launchCmd: "npm run dev",
+    });
+
+    const third = mergeDeezImport([fillSticky.upserts[0]!], [emily], context);
     expect(third).toMatchObject({ imported: 0, updated: 0, skipped: 1 });
   });
 

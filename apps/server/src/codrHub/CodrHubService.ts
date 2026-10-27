@@ -482,6 +482,10 @@ export const layer = Layer.effect(
           category: null,
           tags: [],
           repoUrl: null,
+          previewUrl: null,
+          liveUrl: null,
+          siteId: null,
+          surface: null,
           notes: "",
           hosts: {},
           autonomy: 0,
@@ -492,10 +496,23 @@ export const layer = Layer.effect(
           createdAt: now,
           updatedAt: now,
         };
-        const { id: _id, localPath, ...patch } = input;
+        const { id: _id, localPath, stickyPort, launchCmd, ...patch } = input;
         const hosts = { ...base.hosts };
-        if (localPath === null) delete hosts[node.nodeName];
-        else if (localPath !== undefined) hosts[node.nodeName] = { path: localPath };
+        const hostKey = node.nodeName;
+        if (localPath === null) {
+          delete hosts[hostKey];
+        } else if (localPath !== undefined || stickyPort !== undefined || launchCmd !== undefined) {
+          const previous = hosts[hostKey];
+          const path = localPath !== undefined ? localPath : (previous?.path ?? null);
+          // Host entries need a path; sticky/launch alone cannot create one.
+          if (path !== null) {
+            hosts[hostKey] = {
+              path,
+              stickyPort: stickyPort !== undefined ? stickyPort : (previous?.stickyPort ?? null),
+              launchCmd: launchCmd !== undefined ? launchCmd : (previous?.launchCmd ?? null),
+            };
+          }
+        }
         const next: HubProject = {
           ...base,
           ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)),

@@ -8,6 +8,7 @@ Codr-Hub adds a **Hub** page (sidebar → Hub) that ranks your projects, shows h
 2. Set **This node's name** in Hub settings, for example `Steve`. Each machine keeps its own checkout paths under its name.
 3. Click **Import from Deez-PM** to bring in your existing project list, or **Add project** to add one by hand. Imported projects start with autonomy **Off**.
 4. Check each project's checkout (click its name). The table unions every **connected** environment: each row lists which nodes have a path, and git or running work on that node. Rows that say **Path missing** on the selected machine cannot be worked on from there. Autopilot eligibility is only the environment you pick in the header, not another host's checkout.
+5. Optional site fleet fields: set **Preview site** / **Live site** (and optional site id / surface) on the project for shared glance links in the table. Sticky port and launch command sit next to the checkout path and apply only to that node. Deez-PM import fills empty slots and never overwrites Hub edits. There is no in-Hub Run or OpenShip promote in this slice.
 
 ## Ranking
 

@@ -220,6 +220,11 @@ function ProjectRow(props: {
           ) : null}
           <span className="truncate">{project.name}</span>
         </button>
+        <SiteFleetGlance
+          previewUrl={project.previewUrl}
+          liveUrl={project.liveUrl}
+          host={project.hosts[props.selectedNodeName]}
+        />
         <HostOverlay nodes={view.nodes} />
       </TableCell>
       <TableCell>
@@ -290,6 +295,54 @@ function RunningBadge({ count }: { count: number }) {
     <span ref={observeVisibleAnimation} className="live-tool-shine ms-1.5 text-foreground">
       · {count > 1 ? `${count} running` : "running"}
     </span>
+  );
+}
+
+function SiteFleetGlance(props: {
+  readonly previewUrl: string | null;
+  readonly liveUrl: string | null;
+  readonly host:
+    | { readonly stickyPort: number | null; readonly launchCmd: string | null }
+    | undefined;
+}) {
+  const links = [
+    props.previewUrl ? ({ href: props.previewUrl, label: "Preview" } as const) : null,
+    props.liveUrl ? ({ href: props.liveUrl, label: "Live" } as const) : null,
+  ].filter((link): link is { href: string; label: "Preview" | "Live" } => link !== null);
+  const sticky =
+    props.host?.stickyPort !== null && props.host?.stickyPort !== undefined
+      ? `:${props.host.stickyPort}`
+      : null;
+  const launch =
+    props.host?.launchCmd !== null &&
+    props.host?.launchCmd !== undefined &&
+    props.host.launchCmd !== ""
+      ? props.host.launchCmd
+      : null;
+  if (links.length === 0 && sticky === null && launch === null) return null;
+  return (
+    <div className="mt-0.5 flex flex-col gap-0.5 text-xs">
+      {links.length > 0 ? (
+        <span className="flex flex-wrap gap-x-2 gap-y-0.5">
+          {links.map((link) => (
+            <a
+              key={link.label}
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              className="text-foreground underline-offset-2 hover:underline"
+            >
+              {link.label}
+            </a>
+          ))}
+        </span>
+      ) : null}
+      {sticky !== null || launch !== null ? (
+        <span className="truncate text-muted-foreground">
+          {[sticky, launch].filter(Boolean).join(" · ")}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

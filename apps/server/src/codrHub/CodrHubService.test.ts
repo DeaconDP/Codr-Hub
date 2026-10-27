@@ -89,6 +89,40 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
+  it.effect("merges this-node stickyPort and launchCmd without wiping path", () =>
+    Effect.gen(function* () {
+      const { baseDir, paths } = yield* fixture;
+      yield* Effect.gen(function* () {
+        const hub = yield* Hub.CodrHubService;
+        yield* hub.setNode({ nodeName: "Steve" });
+        yield* hub.upsertProject({
+          name: "Fleet",
+          localPath: "/Users/steve/Fleet",
+          previewUrl: "https://preview.example",
+        });
+        yield* hub.upsertProject({
+          id: "fleet",
+          stickyPort: 5173,
+          launchCmd: "npm run dev",
+        });
+        const [saved] = yield* Store.readProjects(paths);
+        expect(saved?.previewUrl).toBe("https://preview.example");
+        expect(saved?.hosts.Steve).toEqual({
+          path: "/Users/steve/Fleet",
+          stickyPort: 5173,
+          launchCmd: "npm run dev",
+        });
+        yield* hub.upsertProject({ id: "fleet", localPath: "/Users/steve/Fleet-2" });
+        const [moved] = yield* Store.readProjects(paths);
+        expect(moved?.hosts.Steve).toEqual({
+          path: "/Users/steve/Fleet-2",
+          stickyPort: 5173,
+          launchCmd: "npm run dev",
+        });
+      }).pipe(Effect.provide(serviceLayer(baseDir)));
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
   it.effect("keeps concurrent strategy and settings edits to hub.json", () =>
     Effect.gen(function* () {
       const { baseDir, paths } = yield* fixture;

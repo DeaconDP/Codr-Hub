@@ -56,7 +56,7 @@ The portfolio is a directory of JSON files that is also a git repo:
 - `node.json` and `quota-node-id` are never synced. Preserve both on restart; do not copy them to another node. The ledger retains running or unreviewed threads beyond its recent-history limit, and pins each launch to its account even when provider instances change. An unreadable ledger blocks pacing and ownership release until repaired.
 - Each write commits locally. If a remote is configured, `sync` does `pull --rebase` then `push`, retrying a competing push up to three attempts. A conflict restores the local branch and is reported to the user; neither node's edits are auto-resolved. Uncommitted edits or a manual git operation block sync.
 - Portfolio mutations and sync share one lock through snapshot reload. Read the current snapshot after acquiring that lock, or a queued edit can overwrite fields just pulled from another node.
-- A project's local checkout is keyed by node name: `hosts: { "Steve": { path } }`. A path from one machine means nothing on another.
+- A project's local checkout is keyed by node name: `hosts: { "Steve": { path, stickyPort?, launchCmd? } }`. Path, sticky port, and launch command are node-local; a value from one machine means nothing on another. Shared site URLs (`previewUrl`, `liveUrl`) and optional `siteId` / `surface` live on the project itself.
 - A portfolio project is **not** a T3 project. T3 projects are local to one environment. The hub links them at runtime by matching `hosts[thisNode].path` to a T3 project's workspace root, and creates the T3 project when the autopilot first needs it.
 
 ## Autopilot

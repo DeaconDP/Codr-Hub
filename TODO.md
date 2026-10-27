@@ -50,6 +50,7 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Serialize portfolio mutations with sync and snapshot reload, including a failed push after a successful pull
 - [x] Focused multi-node git and service concurrency tests (15 passed), server typecheck, targeted lint
 - [ ] Owner: verify Save & sync on each real mesh node
+- [ ] E2: other Codr-Hub machines on the same Tailscale account show up while the app is open
 
 ## E2: Shared subscription pacing
 
@@ -63,6 +64,27 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 ## Dev launcher
 
 - [x] One-click `run.command` / `run.bat` (Node 24, `vp i`, sticky http://localhost:5733)
+
+## E3: Per-project kanban (in progress)
+
+- [x] Contracts: HubTask, columns, HubBoardSnapshot, HubBoardCommand + board RPCs
+- [x] Pure board.ts (reduceBoard / projectBoard / mintRank / Deez map) + focused tests
+- [x] portfolioStore task file I/O + CodrHubService subscribeBoard/applyBoard under writeLock
+- [x] Wire: ws, auth scopes, client-runtime hubBoardLive / hubBoardApply
+- [x] Web: `/hub/projects/$projectId/board` route + streamlined four-column board
+- [x] Deez import: tasks remap UUID→slug, 5→4 columns, skip existing deezCardId
+- [x] Docs: ARCHITECTURE data note + user doc section; fork-seams if new hooks
+- [x] Verify: focused board/deezImport/hubBoardMove tests (19) + contracts typecheck
+- [ ] Browser pass with owner go-ahead: Board create/drag/edit/delete at desktop and ~390px
+- [ ] Land https://github.com/DeaconDP/Codr-Hub/pull/4 into codr-hub/v0.1
+
+## E3: Site fleet (in progress)
+
+- [x] Contracts: previewUrl, liveUrl on HubProject; stickyPort + launchCmd on HubProjectHost (node-local)
+- [x] Optional siteId/surface for product family; skip OpenShip verbs in this slice
+- [x] Upsert + Deez import map for the new fields
+- [x] Hub dialog + table glance links (Preview / Live; muted port/cmd; no Run/OpenShip)
+- [x] Docs + focused tests; PR stacked or separate from kanban
 
 ## Next engineering slice
 
