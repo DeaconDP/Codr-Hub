@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and install T3 Code Dev on a physical iPhone using the owner's paid
+# Build and install Codr-Hub Dev on a physical iPhone using the owner's paid
 # Apple team. Unique bundle id so we do not collide with T3 Tools identifiers.
 set -euo pipefail
 
@@ -53,17 +53,17 @@ npx expo prebuild --platform ios
 # xcodebuild and install with CoreDevice instead.
 DD="${TMPDIR:-/tmp}codr-ios-derived"
 xcodebuild \
-  -workspace ios/T3CodeDev.xcworkspace \
-  -scheme T3CodeDev \
+  -workspace ios/CodrHubDev.xcworkspace \
+  -scheme CodrHubDev \
   -configuration Debug \
   -destination "id=${DEVICE}" \
   -derivedDataPath "$DD" \
   -allowProvisioningUpdates \
   DEVELOPMENT_TEAM="$T3CODE_IOS_APPLE_TEAM_ID" \
   CODE_SIGN_STYLE=Automatic
-APP=$(find "$DD" -name 'T3CodeDev.app' -path '*iphoneos*' | head -1)
+APP=$(find "$DD" -name 'CodrHubDev.app' -path '*iphoneos*' | head -1)
 if [[ -z "$APP" ]]; then
-  echo "Build finished but T3CodeDev.app was not found under $DD" >&2
+  echo "Build finished but CodrHubDev.app was not found under $DD" >&2
   exit 1
 fi
 xcrun devicectl device install app --device "$DEVICE" "$APP"
