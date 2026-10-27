@@ -53,12 +53,13 @@ The portfolio is a directory of JSON files that is also a git repo:
 <T3 state dir>/codr-hub/portfolio/ git repo (clone of the owner's private repo)
   hub.json                         strategy priorities (ordered) + shared hub settings
   projects/<id>.json               one file per project, so mesh edits rarely conflict
+  handoffs/<id>.json                durable owner verdict and fix-launch handoff
   tasks/<taskId>.json              per-project kanban cards (not part of HubSnapshot)
 <T3 state dir>/codr-hub/node.json  this node only: node name, autopilot on/off, launch ledger
 <T3 state dir>/codr-hub/quota-node-id  stable identity for pacing ownership on this node
 ```
 
-`<T3 state dir>` is `~/.t3/userdata` for an installed server, and `<home-dir>/userdata` for a dev server started with `--home-dir`.
+`<T3 state dir>` is `~/.t3/userdata` for an installed server, and `<home-dir>/userdata` for a dev server started with `--home-dir`. An implicit dev home uses `<base>/dev`; a linked worktree supplies its own explicit `.t3` home. The fleet parent always passes an explicit home, so its files share the server's `userdata/codr-hub` directory.
 
 - One file per project is deliberate. Two nodes editing different projects never conflict in git.
 - Board tasks live beside projects under `tasks/`. Subscribe with `hub.board.subscribe` for one project; never fold tasks into `HubSnapshot`. Ready-for-testing is planning only — it does not create or clear test handoffs.
@@ -74,11 +75,11 @@ The autopilot is a T3 `Scheduler` source on each server. Every tick it does the 
 
 1. Reads usage windows and banked resets from `ProviderRegistry.getProviders`. These are T3's existing probes, so there is no new scraping.
 2. Works out a **pace** in `codrHub/pacing.ts`, a pure function. Local instances of the same provider/account share usage windows and running counts:
-   - The target curve reaches 95% (configurable) at the window's reset. It is convex, so the push grows as the reset nears.
+   - The target curve reaches the configured percentage at reset, with separate Claude, Cursor, and Codex targets and a fallback target for other drivers. All default to 95%. It is convex, so the push grows as the reset nears.
    - The longest window sets the budget curve; shorter windows can cap spending.
    - Any window at or above the cap pauses that provider until it resets.
    - Banked resets add capacity. They are only auto-deployed if the owner turns that on, and only when a credit would otherwise expire unused.
-3. Picks work in `codrHub/selection.ts`, also a pure function. Eligible projects are active, have autonomy above 0%, have a path on this node, and are under their review budget. They are ranked by strategy order, then priority, then manual order.
+3. Picks work in `codrHub/selection.ts`, also a pure function. Eligible projects are active, have autonomy above 0%, have a path on this node, are under their review budget, and are not waiting for the owner's test verdict. They are ranked by strategy order, then priority, favourites, and manual order. `codrHub/modelPolicy.ts` chooses a model from the project's job kind; a fix handoff forces Edit. Model availability and the coding fallback's reset window can postpone a launch.
 4. Verifies account ownership on the portfolio remote before launching or automatically redeeming a reset. Run once uses the same gate.
 5. Reserves a thread ID in the node ledger before dispatching through T3's `ThreadLaunchService`, so a lost reply cannot hide running work. The prompt comes from the project's SDLC stage template. A thread counts against the review budget until settled or archived; archived running or background work still prevents ownership release.
 
@@ -95,6 +96,18 @@ The UI shows autonomy as a percentage, but it maps to T3 runtime primitives in s
 | 100% Full auto | Worktree, full-access                                 | All of the above, then merge to the default branch once tests pass |
 
 The prompt states the level's limits, but the runtime settings above are what actually enforce them. Prompt text alone is not a control.
+
+### Owner test gate
+
+`codrHub/testHandoff.ts` keeps the test verdict separate from thread settlement. A finished owner-try stage creates a durable handoff in the portfolio. Settling or archiving that thread cannot clear it. Ship clears the gate; Fix keeps the note until a launch reserves it for one thread. A failed dispatch restores the Fix handoff. The consumed marker ties the fix to that reserved thread and blocks local eligibility while the thread is outstanding. See the reducer and `CodrHubService` for the transitions.
+
+## Checkout updates
+
+The fleet parent in `scripts/codr-hub-fleet/` supervises source development, separately from `t3 service install`. It owns Git fetch, fast-forward, dependency install, and the child process it starts. It never adopts a server from a port match. The server writes activity; the parent writes the fleet report. These files stay node-local and outside the portfolio repo.
+
+The parent passes one explicit home to dev-runner and persists that selection in the login unit. It reads the actual port and PID from that home's `server-runtime.json`, so worktree offsets and occupied dev ports need no parallel port-selection logic. Only a fresh activity report from the matching server can permit an idle restart. Missing, stale, or mismatched reports hold the update. An untracked live server using the same home blocks the parent.
+
+Setup and removal are in [Fleet supervisor](../operations/codr-hub-fleet.md). Remote updates still require the change to reach each checkout's upstream; the parent does not publish commits or fan out commands to other nodes.
 
 ## Mesh
 

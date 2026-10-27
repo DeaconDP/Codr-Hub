@@ -74,7 +74,50 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Web: `/hub/projects/$projectId/board` route + streamlined four-column board
 - [x] Deez import: tasks remap UUID→slug, 5→4 columns, skip existing deezCardId
 - [x] Docs: ARCHITECTURE data note + user doc section; fork-seams if new hooks
-- [ ] Verify: focused tests + typecheck touched packages; browser pass with owner go-ahead
+- [x] Verify: focused board/deezImport/hubBoardMove tests (19) + contracts typecheck
+- [ ] Browser pass with owner go-ahead: Board create/drag/edit/delete at desktop and ~390px
+- [ ] Land https://github.com/DeaconDP/Codr-Hub/pull/4 into codr-hub/v0.1
+
+## E3: Site fleet (in progress)
+
+- [x] Contracts: previewUrl, liveUrl on HubProject; stickyPort + launchCmd on HubProjectHost (node-local)
+- [x] Optional siteId/surface for product family; skip OpenShip verbs in this slice
+- [x] Upsert + Deez import map for the new fields; merge this-node sticky/launch
+- [x] Hub dialog + table glance links (Preview / Live; muted port/cmd; no Run/OpenShip)
+- [x] Docs + focused tests (stacked on kanban, branch `codr-hub/e3-site-fleet`)
+- [ ] Land https://github.com/DeaconDP/Codr-Hub/pull/5 into codr-hub/v0.1
+
+## Job kind, model policy, pace targets (uncommitted)
+
+- [x] Contracts: HubJobKind + HubLane; per-provider `paceTargets` in HubSettings (Claude, Cursor, Codex, fallback; 95% default)
+- [x] `codrHub/modelPolicy.ts`: model per job kind, fix handoff forces Edit, availability/reset can postpone
+- [x] Web: lanes + per-provider targets in HubPacePanel / HubSettingsPanel
+- [ ] Owner: per-provider pace targets feel right
+
+## Owner test gate (uncommitted)
+
+- [x] `codrHub/testHandoff.ts` + durable `handoffs/<id>.json`; Ship clears, Fix reserves for one thread
+- [x] `selection.ts` skips projects awaiting a verdict
+- [x] Web: HubTestQueue (Ship / Fix)
+- [ ] Owner: try Ship and Fix on a real project
+
+## Fleet supervisor (uncommitted)
+
+- [x] `scripts/codr-hub-fleet/` parent: fetch, fast-forward, install, idle restart via explicit home
+- [x] `codrHub/fleetDecide.ts`, `fleetLogin.ts`; HubFleetReport in snapshot
+- [x] Ops doc `docs/operations/codr-hub-fleet.md`
+- [ ] Owner: arm on each node (`node scripts/codr-hub-fleet/parent.ts --arm`) and watch one fast-forward
+
+## Mobile build (uncommitted)
+
+- [x] iOS device script renamed to CodrHubDev
+- [x] `patches/expo-modules-jsi@58.0.7.patch` for Swift 6.4
+
+## Land the uncommitted work
+
+- [x] Focused tests pass: server Hub 104, contracts 6, web hub 12, fleet scripts 16
+- [ ] Commit in slices (contracts first) so codr-hub/v0.1 builds clean
+- [ ] Rebase PR #4/#5 onto those commits (committed CodrHubService imports modelPolicy/testHandoff/fleetDecide)
 
 ## Next engineering slice
 

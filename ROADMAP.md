@@ -19,7 +19,7 @@ Portfolio store (git-backed), strategy list, project table, Deez-PM import, paci
 
 ### E3. Fold in Deez-Project-Manager
 
-Kanban tasks per project, the machine monitor, Unity Hub/VCC imports, site fleet (preview/live URLs, launch commands), tags and saved views.
+Kanban tasks per project (PR #4) and site fleet: preview/live URLs, sticky ports, launch commands (PR #5), both implemented, PRs open. Remaining: the machine monitor, Unity Hub/VCC imports, tags and saved views.
 
 ### E4. Fold in Cursor-Hub
 
@@ -65,6 +65,8 @@ Steps 1–3 shipped: [docs/codr-hub/MOTION.md](docs/codr-hub/MOTION.md), the Hub
 Done when agent work feels alive on chat and Hub, idle surfaces stay still, and reduced-motion / offscreen pauses are verified by hand on a high-refresh display.
 
 ## Deferred
+
+- 2026-10-27: Machine monitor deferred behind site fleet; Ada metrics overlap E5 Fuel Gauge and are host-scoped, not portfolio cards. `ROADMAP.md` E3
 
 - 2026-10-05: Claude banked resets aren't read on macOS because T3 skips the Keychain. Fuel Gauge reads it via `/usr/bin/security`; porting that touches credential handling and needs a security review. `apps/server/src/provider/Layers/claudeResetCredits.ts:153`
 - 2026-10-05: Automatic takeover of an offline pacing owner deferred; a timeout could let its paused threads resume alongside a new owner. Recover the owning node and drain it before handover. `apps/server/src/codrHub/quotaOwnership.ts:158`
