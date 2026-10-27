@@ -69,7 +69,14 @@ import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstance
 import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import { reduceBoard } from "./board.ts";
-import { mergeDeezImport, readDeezProjects, slugifyProjectName } from "./deezImport.ts";
+import {
+  deezUuidToHubSlug,
+  mergeDeezImport,
+  mergeDeezTasks,
+  readDeezProjects,
+  readDeezTasks,
+  slugifyProjectName,
+} from "./deezImport.ts";
 import { fleetShellBusy } from "./fleetDecide.ts";
 import { GIT_GLANCE_ARGS, parseGitGlance } from "./gitGlance.ts";
 import { selectLaunchModel } from "./modelPolicy.ts";
@@ -828,22 +835,38 @@ export const layer = Layer.effect(
           ),
         );
         const node = yield* Ref.get(nodeRef);
-        const merged = mergeDeezImport(
-          [...(yield* Ref.get(projectsRef)).values()],
-          readDeezProjects(json),
-          {
-            nodeName: node.nodeName,
-            nowIso: yield* nowIso,
-          },
-        );
+        const rawProjects = readDeezProjects(json);
+        const merged = mergeDeezImport([...(yield* Ref.get(projectsRef)).values()], rawProjects, {
+          nodeName: node.nodeName,
+          nowIso: yield* nowIso,
+        });
         if (merged.upserts.length > 0) {
           yield* write(
             `Import ${merged.imported} new, ${merged.updated} updated projects from Deez-Project-Manager`,
             Effect.forEach(merged.upserts, saveProject, { discard: true }),
           );
-          yield* refreshGlances.pipe(Effect.andThen(notify));
+          yield* refreshGlances;
         }
-        return { imported: merged.imported, updated: merged.updated, skipped: merged.skipped };
+        const tasksMerged = mergeDeezTasks(
+          [...(yield* Ref.get(tasksRef)).values()],
+          readDeezTasks(json),
+          deezUuidToHubSlug(rawProjects),
+        );
+        if (tasksMerged.upserts.length > 0) {
+          yield* write(
+            `Import ${tasksMerged.imported} board tasks from Deez-Project-Manager`,
+            Effect.forEach(tasksMerged.upserts, saveTask, { discard: true }),
+          );
+          yield* Ref.update(boardRevisionRef, (revision) => revision + 1);
+          const touchedProjects = new Set(tasksMerged.upserts.map((task) => task.projectId));
+          for (const projectId of touchedProjects) yield* notifyBoard(projectId);
+        }
+        if (merged.upserts.length > 0 || tasksMerged.upserts.length > 0) yield* notify;
+        return {
+          imported: merged.imported + tasksMerged.imported,
+          updated: merged.updated,
+          skipped: merged.skipped + tasksMerged.skipped,
+        };
       }).pipe(writeLock.withPermits(1));
 
     const runSync = (input: HubSyncInput = {}) =>

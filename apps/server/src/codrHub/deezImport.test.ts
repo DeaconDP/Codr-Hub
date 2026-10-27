@@ -1,9 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  deezUuidToHubSlug,
   mapDeezProject,
   mergeDeezImport,
+  mergeDeezTasks,
   readDeezProjects,
+  readDeezTasks,
   slugifyProjectName,
 } from "./deezImport.ts";
 
@@ -87,5 +90,56 @@ describe("codr-hub Deez-PM import", () => {
   it("slugifies names into stable file-safe ids", () => {
     expect(slugifyProjectName("Deez Fuel-Gauge (v2)")).toBe("deez-fuel-gauge-v2");
     expect(slugifyProjectName("!!!")).toBe("project");
+  });
+
+  it("reads tasks and maps Deez UUID project ids onto Hub slugs", () => {
+    const file = {
+      version: 1,
+      projects: [emily],
+      tasks: [
+        {
+          id: "card-1",
+          projectId: emily.id,
+          title: "Ship board",
+          description: "Body",
+          column: "Doing",
+          priority: "High",
+          sortIndex: 0,
+          comments: [{ id: "c1", body: "note", createdAt: context.nowIso }],
+          createdAt: context.nowIso,
+          updatedAt: context.nowIso,
+        },
+        {
+          id: "card-2",
+          projectId: "missing-uuid",
+          title: "Orphan",
+          description: "",
+          column: "Backlog",
+          priority: "Low",
+          sortIndex: 0,
+          comments: [],
+          createdAt: context.nowIso,
+          updatedAt: context.nowIso,
+        },
+      ],
+    };
+    expect(readDeezTasks(file)).toHaveLength(2);
+    expect(readDeezTasks([emily])).toHaveLength(0);
+    const uuidMap = deezUuidToHubSlug(readDeezProjects(file));
+    expect(uuidMap.get(emily.id)).toBe("emily-os");
+
+    const first = mergeDeezTasks([], readDeezTasks(file), uuidMap);
+    expect(first).toMatchObject({ imported: 1, skipped: 1 });
+    expect(first.upserts[0]).toMatchObject({
+      id: "card-1",
+      projectId: "emily-os",
+      column: "in_progress",
+      priority: "high",
+      deezCardId: "card-1",
+      description: "Body\n\nnote",
+    });
+
+    const second = mergeDeezTasks(first.upserts, readDeezTasks(file), uuidMap);
+    expect(second).toMatchObject({ imported: 0, skipped: 2 });
   });
 });
