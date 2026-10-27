@@ -16,6 +16,7 @@ import { Route as PairRouteImport } from './routes/pair'
 import { Route as HubRouteImport } from './routes/hub'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ChatRouteImport } from './routes/_chat'
+import { Route as HubIndexRouteImport } from './routes/hub.index'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsStorageRouteImport } from './routes/settings.storage'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
@@ -35,6 +36,7 @@ import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$proje
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
+import { Route as HubProjectsProjectIdBoardRouteImport } from './routes/hub.projects.$projectId.board'
 
 const WelcomeRoute = WelcomeRouteImport.update({
   id: '/welcome',
@@ -69,6 +71,11 @@ const ConnectRoute = ConnectRouteImport.update({
 const ChatRoute = ChatRouteImport.update({
   id: '/_chat',
   getParentRoute: () => rootRouteImport,
+} as any)
+const HubIndexRoute = HubIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => HubRoute,
 } as any)
 const ChatIndexRoute = ChatIndexRouteImport.update({
   id: '/',
@@ -167,11 +174,17 @@ const ChatEnvironmentIdThreadIdRoute =
     path: '/$environmentId/$threadId',
     getParentRoute: () => ChatRoute,
   } as any)
+const HubProjectsProjectIdBoardRoute =
+  HubProjectsProjectIdBoardRouteImport.update({
+    id: '/projects/$projectId/board',
+    path: '/projects/$projectId/board',
+    getParentRoute: () => HubRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
   '/connect': typeof ConnectRoute
-  '/hub': typeof HubRoute
+  '/hub': typeof HubRouteWithChildren
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
@@ -192,12 +205,13 @@ export interface FileRoutesByFullPath {
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
+  '/hub/': typeof HubIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/hub/projects/$projectId/board': typeof HubProjectsProjectIdBoardRoute
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
-  '/hub': typeof HubRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
@@ -219,14 +233,16 @@ export interface FileRoutesByTo {
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/': typeof ChatIndexRoute
+  '/hub': typeof HubIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/hub/projects/$projectId/board': typeof HubProjectsProjectIdBoardRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
   '/connect': typeof ConnectRoute
-  '/hub': typeof HubRoute
+  '/hub': typeof HubRouteWithChildren
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
@@ -248,8 +264,10 @@ export interface FileRoutesById {
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/_chat/': typeof ChatIndexRoute
+  '/hub/': typeof HubIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/hub/projects/$projectId/board': typeof HubProjectsProjectIdBoardRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -277,12 +295,13 @@ export interface FileRouteTypes {
     | '/settings/snap-shot'
     | '/settings/source-control'
     | '/settings/storage'
+    | '/hub/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/hub/projects/$projectId/board'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
-    | '/hub'
     | '/pair'
     | '/settings'
     | '/usage'
@@ -304,8 +323,10 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/settings/storage'
     | '/'
+    | '/hub'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/hub/projects/$projectId/board'
   id:
     | '__root__'
     | '/_chat'
@@ -332,14 +353,16 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/settings/storage'
     | '/_chat/'
+    | '/hub/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
+    | '/hub/projects/$projectId/board'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
   ConnectRoute: typeof ConnectRoute
-  HubRoute: typeof HubRoute
+  HubRoute: typeof HubRouteWithChildren
   PairRoute: typeof PairRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   UsageRoute: typeof UsageRoute
@@ -397,6 +420,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof ChatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/hub/': {
+      id: '/hub/'
+      path: '/'
+      fullPath: '/hub/'
+      preLoaderRoute: typeof HubIndexRouteImport
+      parentRoute: typeof HubRoute
     }
     '/_chat/': {
       id: '/_chat/'
@@ -531,6 +561,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatEnvironmentIdThreadIdRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/hub/projects/$projectId/board': {
+      id: '/hub/projects/$projectId/board'
+      path: '/projects/$projectId/board'
+      fullPath: '/hub/projects/$projectId/board'
+      preLoaderRoute: typeof HubProjectsProjectIdBoardRouteImport
+      parentRoute: typeof HubRoute
+    }
   }
 }
 
@@ -549,6 +586,18 @@ const ChatRouteChildren: ChatRouteChildren = {
 }
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
+
+interface HubRouteChildren {
+  HubIndexRoute: typeof HubIndexRoute
+  HubProjectsProjectIdBoardRoute: typeof HubProjectsProjectIdBoardRoute
+}
+
+const HubRouteChildren: HubRouteChildren = {
+  HubIndexRoute: HubIndexRoute,
+  HubProjectsProjectIdBoardRoute: HubProjectsProjectIdBoardRoute,
+}
+
+const HubRouteWithChildren = HubRoute._addFileChildren(HubRouteChildren)
 
 interface SettingsRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
@@ -591,7 +640,7 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
   ConnectRoute: ConnectRoute,
-  HubRoute: HubRoute,
+  HubRoute: HubRouteWithChildren,
   PairRoute: PairRoute,
   SettingsRoute: SettingsRouteWithChildren,
   UsageRoute: UsageRoute,
