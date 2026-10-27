@@ -257,4 +257,43 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
       }).pipe(Effect.provide(serviceLayer(baseDir)));
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
+
+  it.effect("applies board commands under the write lock and sweeps tasks on delete", () =>
+    Effect.gen(function* () {
+      const { baseDir, paths } = yield* fixture;
+      yield* Effect.gen(function* () {
+        const hub = yield* Hub.CodrHubService;
+        yield* hub.upsertProject({ name: "Boarded" });
+        const created = yield* hub.applyBoard({
+          type: "create",
+          projectId: "boarded",
+          id: "card-1",
+          title: "Ship board",
+          column: "todo",
+        });
+        expect(created.tasks).toHaveLength(1);
+        expect(created.tasks[0]?.title).toBe("Ship board");
+        expect((yield* Store.readTasks(paths)).map((task) => task.id)).toEqual(["card-1"]);
+
+        const moved = yield* hub.applyBoard({
+          type: "move",
+          projectId: "boarded",
+          taskId: "card-1",
+          toColumn: "in_progress",
+          beforeTaskId: null,
+          afterTaskId: null,
+        });
+        expect(moved.tasks[0]?.column).toBe("in_progress");
+        expect(moved.revision).toBeGreaterThan(created.revision);
+
+        const live = yield* hub
+          .subscribeBoard("boarded")
+          .pipe(Stream.runHead, Effect.map(Option.getOrThrow));
+        expect(live.tasks[0]?.column).toBe("in_progress");
+
+        yield* hub.deleteProject({ id: "boarded" });
+        expect(yield* Store.readTasks(paths)).toEqual([]);
+      }).pipe(Effect.provide(serviceLayer(baseDir)));
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
 });

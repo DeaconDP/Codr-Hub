@@ -10,10 +10,15 @@ import * as NodeOS from "node:os";
 import {
   CommandId,
   HubError,
+  HubFleetReport,
   MessageId,
   ProjectId,
   ThreadId,
+  paceTargetFor,
+  ProviderDriverKind,
   type HubAutonomy,
+  type HubBoardCommand,
+  type HubBoardSnapshot,
   type HubDeleteProjectInput,
   type HubGitGlance,
   type HubImportInput,
@@ -23,17 +28,20 @@ import {
   type HubPace,
   type HubProject,
   type HubProjectView,
+  type HubRecordTestVerdictInput,
   type HubRunAutopilotResult,
   type HubSetNodeInput,
   type HubSetStrategyInput,
   type HubSnapshot,
   type HubSyncInput,
   type HubSyncStatus,
+  type HubTask,
   type HubUpdateSettingsInput,
   type HubUpsertProjectInput,
   type ModelSelection,
   type OrchestrationV2ThreadShell,
   type ServerProvider,
+  type TestHandoff,
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Clock from "effect/Clock";
@@ -51,6 +59,7 @@ import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
+import { writeFileStringAtomically } from "../atomicWrite.ts";
 import * as ServerConfig from "../config.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -59,8 +68,11 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
+import { reduceBoard } from "./board.ts";
 import { mergeDeezImport, readDeezProjects, slugifyProjectName } from "./deezImport.ts";
+import { fleetShellBusy } from "./fleetDecide.ts";
 import { GIT_GLANCE_ARGS, parseGitGlance } from "./gitGlance.ts";
+import { selectLaunchModel } from "./modelPolicy.ts";
 import { computePace, type PaceDecision } from "./pacing.ts";
 import * as Store from "./portfolioStore.ts";
 import * as Quota from "./quotaOwnership.ts";
@@ -71,6 +83,7 @@ import {
   pickNextProject,
   stageLabel,
 } from "./selection.ts";
+import { ownerTryStage, reduceTestHandoff } from "./testHandoff.ts";
 
 const AUTOPILOT_EVERY_MS = 60_000;
 const GLANCE_EVERY_MS = 60_000;
@@ -82,8 +95,13 @@ export class CodrHubService extends Context.Service<
   CodrHubService,
   {
     readonly subscribe: () => Stream.Stream<HubSnapshot, HubError>;
+    readonly subscribeBoard: (projectId: string) => Stream.Stream<HubBoardSnapshot, HubError>;
+    readonly applyBoard: (command: HubBoardCommand) => Effect.Effect<HubBoardSnapshot, HubError>;
     readonly upsertProject: (input: HubUpsertProjectInput) => Effect.Effect<HubOk, HubError>;
     readonly deleteProject: (input: HubDeleteProjectInput) => Effect.Effect<HubOk, HubError>;
+    readonly recordTestVerdict: (
+      input: HubRecordTestVerdictInput,
+    ) => Effect.Effect<HubOk, HubError>;
     readonly setStrategy: (input: HubSetStrategyInput) => Effect.Effect<HubOk, HubError>;
     readonly updateSettings: (input: HubUpdateSettingsInput) => Effect.Effect<HubOk, HubError>;
     readonly setNode: (input: HubSetNodeInput) => Effect.Effect<HubOk, HubError>;
@@ -124,6 +142,14 @@ const isSettled = (shell: OrchestrationV2ThreadShell) =>
   shell.settledOverride === "settled" ||
   (shell.settledOverride !== "active" && shell.settledAt !== null);
 
+const shellFinished = (shell: OrchestrationV2ThreadShell) =>
+  shell.archivedAt === null &&
+  shell.deletedAt === null &&
+  shell.activeRunId === null &&
+  (shell.pendingBackgroundTasks?.length ?? 0) === 0 &&
+  shell.latestRunCompletedAt != null &&
+  (shell.status === "idle" || shell.status === "completed");
+
 const providerLabel = (provider: ServerProvider) => provider.displayName ?? provider.driver;
 const quotaGroup = (provider: ServerProvider) =>
   Quota.accountKey(provider) ?? `instance:${provider.instanceId}`;
@@ -133,14 +159,6 @@ const isUsable = (provider: ServerProvider) =>
   provider.status !== "error" &&
   provider.status !== "disabled" &&
   provider.auth.status !== "unauthenticated";
-
-const defaultModelFor = (provider: ServerProvider): ModelSelection | null => {
-  const model =
-    provider.models.find((candidate) => candidate.isDefault) ??
-    provider.models.find((candidate) => !candidate.isLegacy) ??
-    provider.models[0];
-  return model ? { instanceId: provider.instanceId, model: model.slug } : null;
-};
 
 export const layer = Layer.effect(
   CodrHubService,
@@ -177,12 +195,19 @@ export const layer = Layer.effect(
       Effect.all({
         hub: Store.readHubFile(paths),
         projects: Store.readProjects(paths),
+        handoffs: Store.readHandoffs(paths),
+        tasks: Store.readTasks(paths),
       }),
     );
     const initial = yield* loadFromDisk.pipe(
       Effect.catch((cause) =>
         Effect.logError("Codr-Hub could not read the portfolio; starting empty", { cause }).pipe(
-          Effect.as({ hub: undefined, projects: [] as HubProject[] }),
+          Effect.as({
+            hub: undefined,
+            projects: [] as HubProject[],
+            handoffs: [] as TestHandoff[],
+            tasks: [] as HubTask[],
+          }),
         ),
       ),
     );
@@ -190,6 +215,13 @@ export const layer = Layer.effect(
     const projectsRef = yield* Ref.make<ReadonlyMap<string, HubProject>>(
       new Map(initial.projects.map((project) => [project.id, project])),
     );
+    const handoffsRef = yield* Ref.make<ReadonlyMap<string, TestHandoff>>(
+      new Map(initial.handoffs.map((handoff) => [handoff.projectId, handoff])),
+    );
+    const tasksRef = yield* Ref.make<ReadonlyMap<string, HubTask>>(
+      new Map(initial.tasks.map((task) => [task.id, task])),
+    );
+    const boardRevisionRef = yield* Ref.make(0);
     const initialNode = yield* io(Store.readNodeFile(paths)).pipe(Effect.result);
     const nodeReadError =
       initialNode._tag === "Failure"
@@ -231,6 +263,9 @@ export const layer = Layer.effect(
     const releaseQuotaPending = yield* Ref.make(true);
     const changes = yield* PubSub.sliding<void>(1);
     const notify = PubSub.publish(changes, undefined).pipe(Effect.asVoid);
+    const boardChanges = yield* PubSub.sliding<string>(16);
+    const notifyBoard = (projectId: string) =>
+      PubSub.publish(boardChanges, projectId).pipe(Effect.asVoid);
 
     const nowMs = Clock.currentTimeMillis;
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -292,6 +327,7 @@ export const layer = Layer.effect(
       );
       const records = node.ledger.map((record) => {
         const shell = shells.get(record.threadId);
+        const finished = shell !== undefined && shellFinished(shell);
         return {
           record,
           running:
@@ -299,6 +335,12 @@ export const layer = Layer.effect(
             (shell.activeRunId !== null || (shell.pendingBackgroundTasks?.length ?? 0) > 0),
           // Archived or deleted threads drop out of the active snapshot.
           awaiting: shell !== undefined && shell.archivedAt === null && !isSettled(shell),
+          finished,
+          outstanding:
+            shell !== undefined &&
+            shell.archivedAt === null &&
+            shell.deletedAt === null &&
+            !finished,
         };
       });
       return { node, records };
@@ -308,6 +350,7 @@ export const layer = Layer.effect(
       const { node, records } = yield* ledgerState;
       const glances = yield* Ref.get(glancesRef);
       const exists = yield* Ref.get(existsRef);
+      const handoffs = yield* Ref.get(handoffsRef);
       const views = [...(yield* Ref.get(projectsRef)).values()].map((project): HubProjectView => {
         const local = localPathOf(project, node.nodeName);
         const mine = records.filter((entry) => entry.record.hubProjectId === project.id);
@@ -319,6 +362,7 @@ export const layer = Layer.effect(
           awaitingReview: mine.filter((entry) => entry.awaiting).length,
           running: mine.filter((entry) => entry.running).length,
           lastLaunchAt: mine.at(-1)?.record.launchedAt ?? null,
+          handoff: handoffs.get(project.id) ?? null,
         };
       });
       return { node, records, views };
@@ -367,13 +411,53 @@ export const layer = Layer.effect(
               running: (runningByGroup.get(groups.get(provider.instanceId)!) ?? 0) + unknownRunning,
             },
             {
-              targetPercent: hub.settings.paceTargetPercent,
+              targetPercent: paceTargetFor(hub.settings, provider.driver),
               maxConcurrentRuns: hub.settings.maxConcurrentRuns,
               autoDeployBankedResets: hub.settings.autoDeployBankedResets,
               nowMs: now,
             },
           ),
         }));
+    });
+
+    const fleetReportFile = path.join(config.stateDir, "codr-hub", "fleet.json");
+    const fleetActivityFile = path.join(config.stateDir, "codr-hub", "fleet-activity.json");
+    const decodeFleetReport = Schema.decodeUnknownEffect(Schema.fromJsonString(HubFleetReport));
+
+    const readFleetReport = fs.readFileString(fleetReportFile).pipe(
+      Effect.orElseSucceed(() => ""),
+      Effect.flatMap((text) =>
+        text.trim() === "" ? Effect.succeed(undefined) : decodeFleetReport(text),
+      ),
+      Effect.orElseSucceed(() => undefined),
+    );
+
+    const encodeFleetActivity = Schema.encodeEffect(
+      Schema.fromJsonString(
+        Schema.Struct({
+          atMs: Schema.Number,
+          pid: Schema.Number,
+          busy: Schema.Boolean,
+        }),
+      ),
+    );
+
+    const publishFleetActivity = Effect.gen(function* () {
+      const shells = yield* threadManagement
+        .getShellSnapshot()
+        .pipe(Effect.orElseSucceed(() => null));
+      if (shells === null) return;
+      const busy = fleetShellBusy([...shells.threads, ...shells.archivedThreads]);
+      const atMs = yield* nowMs;
+      const contents = yield* encodeFleetActivity({ atMs, pid: process.pid, busy });
+      yield* writeFileStringAtomically({
+        filePath: fleetActivityFile,
+        contents: `${contents}\n`,
+      }).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Codr-Hub fleet activity was not written", { cause }),
+        ),
+      );
     });
 
     const buildSnapshot = Effect.gen(function* () {
@@ -411,6 +495,7 @@ export const layer = Layer.effect(
         deezProjectManagerPath: (yield* fs.exists(deezPath).pipe(Effect.orElseSucceed(() => false)))
           ? deezPath
           : null,
+        fleet: yield* readFleetReport,
       } satisfies HubSnapshot;
     });
 
@@ -421,6 +506,37 @@ export const layer = Layer.effect(
           return Stream.concat(
             Stream.fromEffect(buildSnapshot),
             Stream.fromSubscription(subscription).pipe(Stream.mapEffect(() => buildSnapshot)),
+          );
+        }),
+      );
+
+    const buildBoard = (projectId: string) =>
+      Effect.gen(function* () {
+        const project = (yield* Ref.get(projectsRef)).get(projectId);
+        if (!project) {
+          return yield* new HubError({ message: `Project ${projectId} not found.` });
+        }
+        const tasks = [...(yield* Ref.get(tasksRef)).values()].filter(
+          (task) => task.projectId === projectId,
+        );
+        return {
+          projectId,
+          project: { id: project.id, name: project.name, status: project.status },
+          revision: yield* Ref.get(boardRevisionRef),
+          tasks,
+        } satisfies HubBoardSnapshot;
+      });
+
+    const subscribeBoard: CodrHubService["Service"]["subscribeBoard"] = (projectId) =>
+      Stream.unwrap(
+        Effect.gen(function* () {
+          const subscription = yield* PubSub.subscribe(boardChanges);
+          return Stream.concat(
+            Stream.fromEffect(buildBoard(projectId)),
+            Stream.fromSubscription(subscription).pipe(
+              Stream.filter((changed) => changed === projectId),
+              Stream.mapEffect(() => buildBoard(projectId)),
+            ),
           );
         }),
       );
@@ -444,6 +560,67 @@ export const layer = Layer.effect(
           Ref.update(projectsRef, (current) => new Map(current).set(project.id, project)),
         ),
       );
+
+    const saveHandoff = (handoff: TestHandoff) =>
+      io(Store.writeHandoff(paths, handoff)).pipe(
+        Effect.andThen(
+          Ref.update(handoffsRef, (current) => new Map(current).set(handoff.projectId, handoff)),
+        ),
+      );
+
+    const saveTask = (task: HubTask) =>
+      io(Store.writeTask(paths, task)).pipe(
+        Effect.andThen(Ref.update(tasksRef, (current) => new Map(current).set(task.id, task))),
+      );
+
+    const dropTask = (taskId: string) =>
+      io(Store.removeTask(paths, taskId)).pipe(
+        Effect.andThen(
+          Ref.update(tasksRef, (current) => {
+            const next = new Map(current);
+            next.delete(taskId);
+            return next;
+          }),
+        ),
+      );
+
+    const applyBoard: CodrHubService["Service"]["applyBoard"] = (command) =>
+      Effect.gen(function* () {
+        const project = (yield* Ref.get(projectsRef)).get(command.projectId);
+        if (!project) {
+          return yield* new HubError({ message: `Project ${command.projectId} not found.` });
+        }
+        const now = yield* nowIso;
+        const current = yield* Ref.get(tasksRef);
+        const reduced = reduceBoard(current, command, now);
+        if (!reduced.ok) {
+          const error = reduced.error;
+          const message =
+            error._tag === "TaskNotFound"
+              ? `Task ${error.taskId} not found.`
+              : error._tag === "CrossProject"
+                ? `Task ${error.taskId} belongs to another project.`
+                : error._tag === "DuplicateTask"
+                  ? `Task ${error.taskId} already exists.`
+                  : error.reason;
+          return yield* new HubError({ message });
+        }
+        if (reduced.touched.length > 0) {
+          yield* write(
+            `Board ${command.type} on ${project.name}`,
+            Effect.forEach(
+              reduced.touched,
+              (touch) => (touch.op === "write" ? saveTask(touch.task) : dropTask(touch.taskId)),
+              { discard: true },
+            ).pipe(
+              Effect.andThen(Ref.update(boardRevisionRef, (revision) => revision + 1)),
+              Effect.andThen(Ref.set(tasksRef, reduced.tasks)),
+            ),
+          );
+          yield* notifyBoard(command.projectId);
+        }
+        return yield* buildBoard(command.projectId);
+      }).pipe(writeLock.withPermits(1));
 
     const saveNode = (update: (node: Store.NodeFile) => Store.NodeFile) =>
       Effect.gen(function* () {
@@ -489,6 +666,8 @@ export const layer = Layer.effect(
           sortIndex: projects.size,
           favorite: false,
           archived: false,
+          lane: null,
+          jobKind: "dev",
           createdAt: now,
           updatedAt: now,
         };
@@ -513,16 +692,56 @@ export const layer = Layer.effect(
         if (!project) return OK;
         yield* write(
           `Remove ${project.name}`,
-          io(Store.removeProject(paths, input.id)).pipe(
-            Effect.andThen(
-              Ref.update(projectsRef, (current) => {
-                const next = new Map(current);
-                next.delete(input.id);
-                return next;
-              }),
-            ),
-          ),
+          Effect.gen(function* () {
+            yield* io(Store.removeProject(paths, input.id));
+            yield* io(Store.removeHandoff(paths, input.id));
+            yield* io(Store.removeTasksForProject(paths, input.id));
+            yield* Ref.update(projectsRef, (current) => {
+              const next = new Map(current);
+              next.delete(input.id);
+              return next;
+            });
+            yield* Ref.update(handoffsRef, (current) => {
+              const next = new Map(current);
+              next.delete(input.id);
+              return next;
+            });
+            yield* Ref.update(tasksRef, (current) => {
+              const next = new Map(current);
+              for (const [taskId, task] of next) {
+                if (task.projectId === input.id) next.delete(taskId);
+              }
+              return next;
+            });
+            yield* Ref.update(boardRevisionRef, (revision) => revision + 1);
+          }),
         );
+        yield* notifyBoard(input.id);
+        return OK;
+      }).pipe(writeLock.withPermits(1));
+
+    const recordTestVerdict: CodrHubService["Service"]["recordTestVerdict"] = (input) =>
+      Effect.gen(function* () {
+        const project = (yield* Ref.get(projectsRef)).get(input.projectId);
+        if (!project)
+          return yield* new HubError({ message: `Project ${input.projectId} not found.` });
+        const current = (yield* Ref.get(handoffsRef)).get(input.projectId) ?? null;
+        const now = yield* nowIso;
+        const next =
+          input.verdict === "ship"
+            ? reduceTestHandoff(current, { type: "ship", updatedAt: now })
+            : reduceTestHandoff(current, {
+                type: "fix",
+                note: input.note,
+                notedAt: now,
+                updatedAt: now,
+              });
+        if (next === null || next === current) {
+          return yield* new HubError({
+            message: `${project.name} is not waiting for that verdict.`,
+          });
+        }
+        yield* write(`Test verdict for ${project.name}`, saveHandoff(next));
         return OK;
       }).pipe(writeLock.withPermits(1));
 
@@ -543,10 +762,16 @@ export const layer = Layer.effect(
     const updateSettings: CodrHubService["Service"]["updateSettings"] = (input) =>
       Effect.gen(function* () {
         const hub = yield* Ref.get(hubRef);
+        const { paceTargets, ...rest } = input;
         const patch = Object.fromEntries(
-          Object.entries(input).filter(([, value]) => value !== undefined),
+          Object.entries(rest).filter(([, value]) => value !== undefined),
         );
-        const next = { ...hub, settings: { ...hub.settings, ...patch } };
+        const nextTargets = {
+          claudeAgent: paceTargets?.claudeAgent ?? hub.settings.paceTargets.claudeAgent,
+          cursor: paceTargets?.cursor ?? hub.settings.paceTargets.cursor,
+          codex: paceTargets?.codex ?? hub.settings.paceTargets.codex,
+        };
+        const next = { ...hub, settings: { ...hub.settings, ...patch, paceTargets: nextTargets } };
         yield* write(
           "Update hub settings",
           io(Store.writeHubFile(paths, next)).pipe(Effect.andThen(Ref.set(hubRef, next))),
@@ -661,6 +886,14 @@ export const layer = Layer.effect(
             projectsRef,
             new Map(reloaded.success.projects.map((project) => [project.id, project])),
           );
+          yield* Ref.set(
+            handoffsRef,
+            new Map(reloaded.success.handoffs.map((handoff) => [handoff.projectId, handoff])),
+          );
+          yield* Ref.set(tasksRef, new Map(reloaded.success.tasks.map((task) => [task.id, task])));
+          yield* Ref.update(boardRevisionRef, (revision) => revision + 1);
+          const projectIds = new Set(reloaded.success.tasks.map((task) => task.projectId));
+          for (const projectId of projectIds) yield* notifyBoard(projectId);
         }
         const error =
           result._tag === "Failure"
@@ -779,7 +1012,17 @@ export const layer = Layer.effect(
         return project;
       });
 
-    const launch = (view: HubProjectView, provider: ServerProvider) =>
+    const launchError = (view: HubProjectView) => (cause: unknown) =>
+      isHubError(cause)
+        ? cause
+        : new HubError({ message: `Could not launch ${view.project.name}.`, cause });
+
+    /** Checks a project can launch on this provider. Dispatches no thread. */
+    const planLaunch = (
+      view: HubProjectView,
+      provider: ServerProvider,
+      paced: ReadonlyArray<{ readonly provider: ServerProvider; readonly decision: PaceDecision }>,
+    ) =>
       Effect.gen(function* () {
         const hub = yield* Ref.get(hubRef);
         const { project } = view;
@@ -790,14 +1033,34 @@ export const layer = Layer.effect(
         if (settings.worktree && git === null) {
           return yield* new HubError({ message: `${project.name} is not a git repository.` });
         }
+        const rows = paced.map(({ provider: pacedProvider, decision }) => ({
+          instanceId: pacedProvider.instanceId,
+          driver: pacedProvider.driver,
+          models: pacedProvider.models.map((model) => model.slug),
+          pace: {
+            state: decision.pace.state,
+            resetsAt: decision.pace.resetsAt,
+            usedPercent: decision.pace.usedPercent,
+          },
+        }));
+        const candidate = rows.find((row) => row.instanceId === provider.instanceId);
+        const choice =
+          candidate === undefined
+            ? { _tag: "NotNow" as const }
+            : selectLaunchModel({
+                jobKind: project.jobKind,
+                handoff: view.handoff,
+                candidate,
+                providers: rows,
+                codexTargetPercent: paceTargetFor(hub.settings, ProviderDriverKind.make("codex")),
+              });
+        if (choice._tag === "NotNow") return { _tag: "NotNow" as const };
         const t3Project = yield* resolveT3Project(project, workspaceRoot);
-        const modelSelection =
-          t3Project.defaultModelSelection?.instanceId === provider.instanceId
-            ? t3Project.defaultModelSelection
-            : defaultModelFor(provider);
-        if (modelSelection === null) {
-          return yield* new HubError({ message: `${providerLabel(provider)} has no models.` });
-        }
+        const modelSelection: ModelSelection = {
+          instanceId: choice.instanceId,
+          model: choice.model,
+          ...(choice.options.length > 0 ? { options: [...choice.options] } : {}),
+        };
         const id = yield* uuid;
         const now = yield* nowIso;
         const record: Store.NodeLaunchRecord = {
@@ -810,6 +1073,61 @@ export const layer = Layer.effect(
           autonomy,
           launchedAt: now,
         };
+        const strategyTitle =
+          hub.strategy.find((priority) => priority.id === project.strategyId)?.title ?? null;
+        const stagePrompt = buildAutopilotPrompt({
+          project,
+          mode: hub.settings.sdlcMode,
+          stagePrompts: hub.settings.stagePrompts,
+          strategyTitle,
+        });
+        const fix = view.handoff?.kind === "fix" ? view.handoff : null;
+        const text = fix
+          ? `${fix.note}\n\nFollow poteto-mode.`
+          : choice.promptSuffix === null
+            ? stagePrompt
+            : `${stagePrompt}\n\n${choice.promptSuffix}`;
+        const input: ThreadLaunchService.ThreadLaunchInput = {
+          commandId: CommandId.make(`codr-hub:launch:${id}`),
+          threadId: record.threadId,
+          projectId: t3Project.id,
+          title: `Autopilot: ${project.name} (${stageLabel(project.stage, hub.settings.sdlcMode)})`,
+          modelSelection,
+          runtimeMode: settings.runtimeMode,
+          interactionMode: settings.interactionMode,
+          workspaceStrategy: settings.worktree
+            ? {
+                type: "worktree",
+                baseRef: git?.branch ?? "HEAD",
+                branch: `codr-hub/${project.id}-${project.stage}-${now.slice(0, 16).replace(/[-:T]/g, "")}`,
+              }
+            : { type: "root" },
+          initialMessage: {
+            messageId: MessageId.make(`codr-hub-message:${id}`),
+            text,
+            attachments: [],
+          },
+          createdBy: "system",
+          creationSource: "server",
+        };
+        return {
+          _tag: "Ready" as const,
+          record,
+          input,
+          restoreFix: fix,
+        };
+      }).pipe(Effect.mapError(launchError(view)));
+
+    const dispatchLaunch = (
+      view: HubProjectView,
+      plan: {
+        readonly record: Store.NodeLaunchRecord;
+        readonly input: ThreadLaunchService.ThreadLaunchInput;
+        readonly restoreFix: Extract<TestHandoff, { kind: "fix" }> | null;
+      },
+    ) =>
+      Effect.gen(function* () {
+        const { record } = plan;
         const { records } = yield* ledgerState;
         const retained = new Set(
           records
@@ -832,44 +1150,32 @@ export const layer = Layer.effect(
             ],
           };
         });
-        const strategyTitle =
-          hub.strategy.find((priority) => priority.id === project.strategyId)?.title ?? null;
-        yield* threadLaunch.launch({
-          commandId: CommandId.make(`codr-hub:launch:${id}`),
-          threadId: record.threadId,
-          projectId: t3Project.id,
-          title: `Autopilot: ${project.name} (${stageLabel(project.stage, hub.settings.sdlcMode)})`,
-          modelSelection,
-          runtimeMode: settings.runtimeMode,
-          interactionMode: settings.interactionMode,
-          workspaceStrategy: settings.worktree
-            ? {
-                type: "worktree",
-                baseRef: git?.branch ?? "HEAD",
-                branch: `codr-hub/${project.id}-${project.stage}-${now.slice(0, 16).replace(/[-:T]/g, "")}`,
-              }
-            : { type: "root" },
-          initialMessage: {
-            messageId: MessageId.make(`codr-hub-message:${id}`),
-            text: buildAutopilotPrompt({
-              project,
-              mode: hub.settings.sdlcMode,
-              stagePrompts: hub.settings.stagePrompts,
-              strategyTitle,
-            }),
-            attachments: [],
-          },
-          createdBy: "system",
-          creationSource: "server",
-        });
+        if (plan.restoreFix) {
+          const consumed = reduceTestHandoff(plan.restoreFix, {
+            type: "consumed",
+            byThreadId: record.threadId,
+            updatedAt: record.launchedAt,
+          });
+          if (consumed !== null && consumed !== plan.restoreFix) {
+            yield* write(`Record fix launch for ${view.project.name}`, saveHandoff(consumed));
+          }
+        }
+        const launched = yield* threadLaunch.launch(plan.input).pipe(Effect.result);
+        if (launched._tag === "Failure") {
+          if (plan.restoreFix) {
+            yield* write(
+              `Restore fix note for ${view.project.name}`,
+              saveHandoff(plan.restoreFix),
+            ).pipe(
+              Effect.catch((cause) =>
+                Effect.logWarning("Codr-Hub could not restore the fix note", { cause }),
+              ),
+            );
+          }
+          return yield* launchError(view)(launched.failure);
+        }
         return record;
-      }).pipe(
-        Effect.mapError((cause) =>
-          isHubError(cause)
-            ? cause
-            : new HubError({ message: `Could not launch ${view.project.name}.`, cause }),
-        ),
-      );
+      }).pipe(Effect.mapError(launchError(view)));
 
     /**
      * One pass: deploy banked resets the owner opted into, then fill each
@@ -930,7 +1236,10 @@ export const layer = Layer.effect(
                 : "No provider is behind pace; nothing to spend right now.",
             );
           }
-          const tried = new Set<string>();
+          const outstanding = new Set(
+            records.filter((entry) => entry.outstanding).map((entry) => entry.record.threadId),
+          );
+          const blocked = new Set<string>();
           const accounts = new Set<string>();
           outer: for (const { provider, decision } of candidates) {
             const group = quotaGroup(provider);
@@ -938,24 +1247,41 @@ export const layer = Layer.effect(
             accounts.add(group);
             let slots = force ? 1 : order(decision);
             if (slots <= 0 || budget <= 0) continue;
-            if (pickNextProject(views, hub.strategy, tried) === null) {
+            const skippedHere = new Set<string>();
+            const exclude = () => new Set([...blocked, ...skippedHere]);
+            if (pickNextProject(views, hub.strategy, exclude(), outstanding) === null) {
               notes.push("No eligible project.");
               break;
             }
             if (!(yield* permit(provider))) continue;
             while (slots > 0 && budget > 0) {
-              const view = pickNextProject(views, hub.strategy, tried);
+              const view = pickNextProject(views, hub.strategy, exclude(), outstanding);
               if (view === null) {
-                const sample = views.find((candidate) => !tried.has(candidate.project.id));
-                notes.push(
-                  sample
-                    ? `No eligible project (e.g. ${sample.project.name}: ${ineligibleReason(sample)}).`
-                    : "No eligible project.",
-                );
-                break outer;
+                if (pickNextProject(views, hub.strategy, blocked, outstanding) === null) {
+                  const sample = views.find((candidate) => !blocked.has(candidate.project.id));
+                  notes.push(
+                    sample
+                      ? `No eligible project (e.g. ${sample.project.name}: ${ineligibleReason(sample, outstanding)}).`
+                      : "No eligible project.",
+                  );
+                  break outer;
+                }
+                break;
               }
-              tried.add(view.project.id);
-              const result = yield* launch(view, provider).pipe(Effect.result);
+              const plan = yield* planLaunch(view, provider, decisions).pipe(Effect.result);
+              if (plan._tag === "Failure") {
+                // Nothing was dispatched, so one broken project must not
+                // block the rest of the portfolio. Try the next one.
+                blocked.add(view.project.id);
+                notes.push(plan.failure.message);
+                continue;
+              }
+              if (plan.success._tag === "NotNow") {
+                skippedHere.add(view.project.id);
+                continue;
+              }
+              blocked.add(view.project.id);
+              const result = yield* dispatchLaunch(view, plan.success).pipe(Effect.result);
               if (result._tag === "Failure") {
                 notes.push(result.failure.message);
                 // A failed reply can follow a committed dispatch. Recheck
@@ -980,17 +1306,65 @@ export const layer = Layer.effect(
 
     // --- scheduler -----------------------------------------------------------
 
+    const armFinishedHandoffs = Effect.gen(function* () {
+      const { node, records } = yield* ledgerState;
+      const mode = (yield* Ref.get(hubRef)).settings.sdlcMode;
+      const stored = yield* Ref.get(handoffsRef);
+      const now = yield* nowIso;
+      const byProject = new Map<string, typeof records>();
+      for (const entry of records) {
+        if (!entry.finished || entry.record.stage !== ownerTryStage(mode)) continue;
+        const list = byProject.get(entry.record.hubProjectId) ?? [];
+        list.push(entry);
+        byProject.set(entry.record.hubProjectId, list);
+      }
+      const updates: TestHandoff[] = [];
+      for (const [projectId, entries] of byProject) {
+        let next = stored.get(projectId) ?? null;
+        const started = next;
+        const ordered = [...entries].sort((left, right) =>
+          left.record.launchedAt < right.record.launchedAt
+            ? -1
+            : left.record.launchedAt > right.record.launchedAt
+              ? 1
+              : 0,
+        );
+        for (const entry of ordered) {
+          next = reduceTestHandoff(next, {
+            type: "threadFinished",
+            projectId,
+            threadId: entry.record.threadId,
+            stage: entry.record.stage,
+            mode,
+            nodeName: node.nodeName,
+            finishedAt: now,
+            updatedAt: now,
+          });
+        }
+        if (next !== null && next !== started) updates.push(next);
+      }
+      if (updates.length === 0) return;
+      yield* write("Record test handoff", Effect.forEach(updates, saveHandoff, { discard: true }));
+    });
+
     const tick = Effect.gen(function* () {
       const now = yield* nowMs;
       const timers = yield* Ref.get(timersRef);
       const node = yield* Ref.get(nodeRef);
+      yield* armFinishedHandoffs.pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Codr-Hub test handoff was not recorded", { cause }),
+        ),
+      );
       if (now - timers.glance >= GLANCE_EVERY_MS) {
         yield* Ref.update(timersRef, (t) => ({ ...t, glance: now, refresh: now }));
         yield* refreshGlances;
+        yield* publishFleetActivity;
         yield* notify;
       } else if (now - timers.refresh >= REFRESH_EVERY_MS) {
         // Usage and thread state move on their own; keep subscribers current.
         yield* Ref.update(timersRef, (t) => ({ ...t, refresh: now }));
+        yield* publishFleetActivity;
         yield* notify;
       }
       if (now - timers.autopilot >= AUTOPILOT_EVERY_MS) {
@@ -1007,12 +1381,16 @@ export const layer = Layer.effect(
       }
     });
 
+    yield* publishFleetActivity;
     yield* scheduler.register("codr-hub", tick);
 
     return CodrHubService.of({
       subscribe,
+      subscribeBoard,
+      applyBoard,
       upsertProject,
       deleteProject,
+      recordTestVerdict,
       setStrategy,
       updateSettings,
       setNode,
