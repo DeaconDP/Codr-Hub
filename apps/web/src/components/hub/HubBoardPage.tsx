@@ -1,23 +1,43 @@
 import {
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  closestCorners,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   HUB_BOARD_COLUMNS,
   projectBoard,
   type EnvironmentId,
   type HubBoardColumn,
   type HubBoardCommand,
+  type HubBoardProjection,
   type HubPriority,
   type HubTask,
 } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
+import { MoreHorizontalIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { isElectron } from "../../env";
 import { useEscapeToGoBack } from "../../hooks/useNavigateBack";
-import { randomUUID } from "../../lib/utils";
+import { cn, randomUUID } from "../../lib/utils";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SidebarInset } from "../ui/sidebar";
@@ -30,6 +50,7 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { isSamePlacement, moveNeighbors } from "./hubBoardMove";
 import { PRIORITY_OPTIONS } from "./hubFormat";
 import { useHubAction } from "./useHubAction";
 
@@ -38,6 +59,25 @@ const COLUMN_LABEL: Record<HubBoardColumn, string> = {
   in_progress: "In progress",
   ready_for_testing: "Ready for testing",
   done: "Done",
+};
+
+const COLUMN_DROP_PREFIX = "hub-board-col:";
+
+const columnDropId = (column: HubBoardColumn) => `${COLUMN_DROP_PREFIX}${column}`;
+
+const parseColumnDropId = (id: string): HubBoardColumn | null => {
+  if (!id.startsWith(COLUMN_DROP_PREFIX)) return null;
+  const column = id.slice(COLUMN_DROP_PREFIX.length);
+  return (HUB_BOARD_COLUMNS as ReadonlyArray<string>).includes(column)
+    ? (column as HubBoardColumn)
+    : null;
+};
+
+const findTaskColumn = (projected: HubBoardProjection, taskId: string): HubBoardColumn | null => {
+  for (const column of HUB_BOARD_COLUMNS) {
+    if (projected[column].some((task) => task.id === taskId)) return column;
+  }
+  return null;
 };
 
 /** Per-project kanban. Idle chrome stays still (docs/codr-hub/MOTION.md). */
@@ -74,11 +114,75 @@ export function HubBoardPage(props: { readonly projectId: string }) {
     [board.data],
   );
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
   const run = async (command: HubBoardCommand) => {
     if (!environmentId) return;
     const result = await apply.run(command);
     if (result && command.type === "create") setDraftTitle("");
     if (result && command.type === "update") setEditing(null);
+  };
+
+  const placeTask = (
+    taskId: string,
+    toColumn: HubBoardColumn,
+    neighbors: { beforeTaskId: string | null; afterTaskId: string | null },
+  ) => {
+    if (!projected) return;
+    if (
+      findTaskColumn(projected, taskId) === toColumn &&
+      isSamePlacement({
+        columnTasks: projected[toColumn],
+        taskId,
+        beforeTaskId: neighbors.beforeTaskId,
+        afterTaskId: neighbors.afterTaskId,
+      })
+    ) {
+      return;
+    }
+    void run({
+      type: "move",
+      projectId: props.projectId,
+      taskId,
+      toColumn,
+      beforeTaskId: neighbors.beforeTaskId,
+      afterTaskId: neighbors.afterTaskId,
+    });
+  };
+
+  const moveToColumn = (taskId: string, toColumn: HubBoardColumn) => {
+    if (!projected) return;
+    const neighbors = moveNeighbors({
+      destTasks: projected[toColumn],
+      activeId: taskId,
+      overTaskId: null,
+    });
+    placeTask(taskId, toColumn, neighbors);
+    setColumnFocus(toColumn);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    if (apply.busy || !projected || event.over === null) return;
+    const activeId = String(event.active.id);
+    const overId = String(event.over.id);
+    if (activeId === overId) return;
+
+    const fromColumn = findTaskColumn(projected, activeId);
+    if (fromColumn === null) return;
+
+    const overColumn = parseColumnDropId(overId);
+    const toColumn = overColumn ?? findTaskColumn(projected, overId);
+    if (toColumn === null) return;
+
+    const neighbors = moveNeighbors({
+      destTasks: projected[toColumn],
+      activeId,
+      overTaskId: overColumn === null ? overId : null,
+    });
+    placeTask(activeId, toColumn, neighbors);
   };
 
   const header = (
@@ -132,6 +236,7 @@ export function HubBoardPage(props: { readonly projectId: string }) {
                       onChange={(event) => setDraftTitle(event.target.value)}
                       placeholder="Title"
                       aria-label="New card title"
+                      disabled={apply.busy}
                     />
                   </label>
                   <Button
@@ -170,53 +275,30 @@ export function HubBoardPage(props: { readonly projectId: string }) {
                     </Select>
                   </div>
 
-                  <div className="hidden gap-3 @min-[390px]:grid @min-[390px]:grid-cols-4">
-                    {HUB_BOARD_COLUMNS.map((column) => (
-                      <BoardColumn
-                        key={column}
-                        column={column}
-                        tasks={projected[column]}
-                        busy={apply.busy}
-                        onMove={(taskId, toColumn) =>
-                          void run({
-                            type: "move",
-                            projectId: props.projectId,
-                            taskId,
-                            toColumn,
-                            beforeTaskId: null,
-                            afterTaskId: null,
-                          })
-                        }
-                        onEdit={setEditing}
-                        onDelete={(taskId) =>
-                          void run({ type: "delete", projectId: props.projectId, taskId })
-                        }
-                      />
-                    ))}
-                  </div>
-
-                  <div className="@min-[390px]:hidden">
-                    <BoardColumn
-                      column={columnFocus}
-                      tasks={projected[columnFocus]}
-                      busy={apply.busy}
-                      onMove={(taskId, toColumn) => {
-                        void run({
-                          type: "move",
-                          projectId: props.projectId,
-                          taskId,
-                          toColumn,
-                          beforeTaskId: null,
-                          afterTaskId: null,
-                        });
-                        setColumnFocus(toColumn);
-                      }}
-                      onEdit={setEditing}
-                      onDelete={(taskId) =>
-                        void run({ type: "delete", projectId: props.projectId, taskId })
-                      }
-                    />
-                  </div>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCorners}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <div className="flex flex-col gap-3 @min-[390px]:grid @min-[390px]:grid-cols-4">
+                      {HUB_BOARD_COLUMNS.map((column) => (
+                        <BoardColumn
+                          key={column}
+                          column={column}
+                          tasks={projected[column]}
+                          busy={apply.busy}
+                          className={
+                            column === columnFocus ? undefined : "hidden @min-[390px]:flex"
+                          }
+                          onMoveToColumn={moveToColumn}
+                          onEdit={setEditing}
+                          onDelete={(taskId) =>
+                            void run({ type: "delete", projectId: props.projectId, taskId })
+                          }
+                        />
+                      ))}
+                    </div>
+                  </DndContext>
                 </div>
 
                 {editing ? (
@@ -247,60 +329,128 @@ function BoardColumn(props: {
   readonly column: HubBoardColumn;
   readonly tasks: ReadonlyArray<HubTask>;
   readonly busy: boolean;
-  readonly onMove: (taskId: string, toColumn: HubBoardColumn) => void;
+  readonly className?: string;
+  readonly onMoveToColumn: (taskId: string, toColumn: HubBoardColumn) => void;
   readonly onEdit: (task: HubTask) => void;
   readonly onDelete: (taskId: string) => void;
 }) {
+  const droppable = useDroppable({ id: columnDropId(props.column) });
+  const itemIds = props.tasks.map((task) => task.id);
+
   return (
-    <section aria-labelledby={`hub-col-${props.column}`} className="flex min-w-0 flex-col gap-2">
-      <h2 id={`hub-col-${props.column}`} className="text-sm font-medium text-foreground">
+    <section
+      ref={droppable.setNodeRef}
+      aria-labelledby={`hub-col-${props.column}`}
+      className={cn("flex min-w-0 flex-col gap-2 rounded-md p-1", props.className)}
+    >
+      <h2 id={`hub-col-${props.column}`} className="px-1 text-sm font-medium text-foreground">
         {COLUMN_LABEL[props.column]}
         <span className="ms-1 text-muted-foreground tabular-nums">{props.tasks.length}</span>
       </h2>
-      <ol className="flex flex-col gap-2">
-        {props.tasks.length === 0 ? (
-          <li className="text-sm text-muted-foreground">Empty</li>
-        ) : (
-          props.tasks.map((task) => (
-            <li key={task.id} className="border border-border p-3">
-              <button
-                type="button"
-                className="w-full text-start focus-visible:outline-2 focus-visible:outline-ring"
-                onClick={() => props.onEdit(task)}
-              >
-                <span className="font-medium text-foreground">{task.title}</span>
-                {task.description.trim() !== "" ? (
-                  <span className="mt-1 block text-sm text-muted-foreground line-clamp-3">
-                    {task.description}
-                  </span>
-                ) : null}
-              </button>
-              <div className="mt-2 flex flex-wrap gap-1">
-                {HUB_BOARD_COLUMNS.filter((column) => column !== props.column).map((column) => (
-                  <Button
-                    key={column}
-                    size="xs"
-                    variant="ghost-muted"
-                    disabled={props.busy}
-                    onClick={() => props.onMove(task.id, column)}
-                  >
-                    {COLUMN_LABEL[column]}
-                  </Button>
-                ))}
-                <Button
-                  size="xs"
-                  variant="ghost-muted"
-                  disabled={props.busy}
-                  onClick={() => props.onDelete(task.id)}
-                >
-                  Delete
-                </Button>
-              </div>
-            </li>
-          ))
-        )}
-      </ol>
+      <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+        <ol className="flex min-h-16 flex-col gap-2">
+          {props.tasks.length === 0 ? (
+            <li className="px-1 py-3 text-sm text-muted-foreground">Empty</li>
+          ) : (
+            props.tasks.map((task) => (
+              <SortableCard
+                key={task.id}
+                task={task}
+                column={props.column}
+                busy={props.busy}
+                onMoveToColumn={props.onMoveToColumn}
+                onEdit={props.onEdit}
+                onDelete={props.onDelete}
+              />
+            ))
+          )}
+        </ol>
+      </SortableContext>
     </section>
+  );
+}
+
+function SortableCard(props: {
+  readonly task: HubTask;
+  readonly column: HubBoardColumn;
+  readonly busy: boolean;
+  readonly onMoveToColumn: (taskId: string, toColumn: HubBoardColumn) => void;
+  readonly onEdit: (task: HubTask) => void;
+  readonly onDelete: (taskId: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({
+    id: props.task.id,
+    disabled: props.busy,
+    animateLayoutChanges: () => false,
+  });
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={isDragging ? { transform: CSS.Translate.toString(transform), zIndex: 10 } : undefined}
+      className={cn(
+        "border border-border/60 bg-background px-3 py-2.5",
+        isDragging && "relative border-border shadow-md opacity-95",
+      )}
+    >
+      <div className="flex items-start gap-1">
+        <button
+          type="button"
+          className={cn(
+            "min-h-11 min-w-0 flex-1 cursor-grab touch-none py-1 text-start active:cursor-grabbing",
+            "focus-visible:outline-2 focus-visible:outline-ring",
+            props.busy && "cursor-default",
+          )}
+          disabled={props.busy}
+          onClick={() => props.onEdit(props.task)}
+          {...attributes}
+          {...listeners}
+        >
+          <span className="font-medium text-foreground">{props.task.title}</span>
+          {props.task.description.trim() !== "" ? (
+            <span className="mt-1 block text-sm text-muted-foreground line-clamp-3">
+              {props.task.description}
+            </span>
+          ) : null}
+        </button>
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button
+                size="icon-xl"
+                variant="ghost-muted"
+                className="shrink-0"
+                disabled={props.busy}
+                aria-label={`Actions for ${props.task.title}`}
+              />
+            }
+          >
+            <MoreHorizontalIcon className="size-4" />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            {HUB_BOARD_COLUMNS.filter((column) => column !== props.column).map((column) => (
+              <MenuItem
+                key={column}
+                density="touch"
+                disabled={props.busy}
+                onClick={() => props.onMoveToColumn(props.task.id, column)}
+              >
+                Move to {COLUMN_LABEL[column]}
+              </MenuItem>
+            ))}
+            <MenuSeparator />
+            <MenuItem
+              density="touch"
+              variant="destructive"
+              disabled={props.busy}
+              onClick={() => props.onDelete(props.task.id)}
+            >
+              Delete
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
+      </div>
+    </li>
   );
 }
 
