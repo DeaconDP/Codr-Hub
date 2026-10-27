@@ -37,7 +37,7 @@ import * as Quota from "./quotaOwnership.ts";
 
 const provider = (id: string, now: number, usedPercent = 94): ServerProvider => ({
   instanceId: ProviderInstanceId.make(id),
-  driver: ProviderDriverKind.make("codex"),
+  driver: ProviderDriverKind.make("claudeAgent"),
   enabled: true,
   installed: true,
   version: "test",
@@ -45,7 +45,13 @@ const provider = (id: string, now: number, usedPercent = 94): ServerProvider => 
   auth: { status: "authenticated", email: "shared@example.test" },
   checkedAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
   models: [
-    { slug: "test-model", name: "Test", isCustom: false, isDefault: true, capabilities: null },
+    {
+      slug: "claude-fable-5-1",
+      name: "Opus",
+      isCustom: false,
+      isDefault: true,
+      capabilities: null,
+    },
   ],
   slashCommands: [],
   skills: [],
@@ -324,6 +330,29 @@ it.layer(NodeServices.layer)("autopilot quota coordination", (it) => {
       const waiting = results.find((r) => r.run.launched.length === 0);
       expect(waiting?.state.pace[0]?.state).toBe("unavailable");
       expect(waiting?.state.pace[0]?.reason).toContain("owned by");
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
+  it.effect("skips a top-ranked project that cannot launch and launches the next", () =>
+    Effect.gen(function* () {
+      const { steve, now } = yield* fixture;
+      const node = nodeHarness(steve.baseDir, [provider("left", now)]);
+      yield* Effect.gen(function* () {
+        const hub = yield* Hub.CodrHubService;
+        yield* hub.setNode({ nodeName: "Steve", autopilotEnabled: true });
+        // Draft PR needs a worktree, and the checkout is not a git repo.
+        yield* hub.upsertProject({
+          name: "Broken",
+          priority: "critical",
+          autonomy: 75,
+          localPath: steve.baseDir,
+        });
+        yield* hub.upsertProject({ name: "Fine", autonomy: 25, localPath: steve.baseDir });
+        const run = yield* hub.runAutopilot();
+        expect(run.notes).toContain("Broken is not a git repository.");
+        expect(node.calls).toHaveLength(1);
+        expect(node.calls[0]?.title).toMatch(/^Autopilot: Fine /);
+      }).pipe(Effect.provide(node.layer));
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 

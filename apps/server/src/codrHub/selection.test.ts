@@ -1,4 +1,4 @@
-import type { HubProject, HubProjectView } from "@t3tools/contracts";
+import { ThreadId, type HubProject, type HubProjectView } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import {
@@ -26,6 +26,8 @@ const project = (overrides: Partial<HubProject>): HubProject => ({
   sortIndex: 0,
   favorite: false,
   archived: false,
+  lane: null,
+  jobKind: "dev",
   createdAt: "2026-10-05T00:00:00.000Z",
   updatedAt: "2026-10-05T00:00:00.000Z",
   ...overrides,
@@ -42,6 +44,7 @@ const view = (
   awaitingReview: 0,
   running: 0,
   lastLaunchAt: null,
+  handoff: null,
   ...state,
 });
 
@@ -86,6 +89,25 @@ describe("codr-hub selection", () => {
       "review budget is full",
     );
     expect(ineligibleReason(view({}))).toBeNull();
+    expect(
+      ineligibleReason(
+        view(
+          {},
+          {
+            handoff: {
+              version: 1,
+              kind: "ready",
+              projectId: "p",
+              updatedAt: "2026-10-20T12:00:00.000Z",
+              sourceThreadId: ThreadId.make("thread-a"),
+              sourceStage: "develop",
+              nodeName: "Steve",
+              finishedAt: "2026-10-20T12:00:00.000Z",
+            },
+          },
+        ),
+      ),
+    ).toBe("waiting for you to test");
   });
 
   it("honours an exclusion set so one tick never launches a project twice", () => {

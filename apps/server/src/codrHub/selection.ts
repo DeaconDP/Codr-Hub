@@ -19,8 +19,13 @@ import {
   type RuntimeMode,
 } from "@t3tools/contracts";
 
+import { handoffBlocksLaunch } from "./testHandoff.ts";
+
 /** Why a project is not eligible right now, or null when it is. */
-export function ineligibleReason(view: HubProjectView): string | null {
+export function ineligibleReason(
+  view: HubProjectView,
+  outstandingThreadIds: ReadonlySet<string> = new Set(),
+): string | null {
   const { project } = view;
   if (project.archived) return "archived";
   if (project.status !== "active") return `status is ${project.status}`;
@@ -29,6 +34,11 @@ export function ineligibleReason(view: HubProjectView): string | null {
   if (!view.pathExists) return "checkout path is missing";
   if (view.running > 0) return "already running";
   if (view.awaitingReview >= project.reviewBudget) return "review budget is full";
+  const consumingOutstanding =
+    view.handoff?.kind === "cleared" &&
+    view.handoff.reason === "consumed" &&
+    outstandingThreadIds.has(view.handoff.byThreadId);
+  if (handoffBlocksLaunch(view.handoff, consumingOutstanding)) return "waiting for you to test";
   return null;
 }
 
@@ -36,11 +46,15 @@ export function pickNextProject(
   views: ReadonlyArray<HubProjectView>,
   strategy: ReadonlyArray<HubStrategyPriority>,
   exclude: ReadonlySet<string> = new Set(),
+  outstandingThreadIds: ReadonlySet<string> = new Set(),
 ): HubProjectView | null {
   const compare = compareHubProjects(strategy);
   return (
     views
-      .filter((view) => !exclude.has(view.project.id) && ineligibleReason(view) === null)
+      .filter(
+        (view) =>
+          !exclude.has(view.project.id) && ineligibleReason(view, outstandingThreadIds) === null,
+      )
       .toSorted((a, b) => compare(a.project, b.project))[0] ?? null
   );
 }
