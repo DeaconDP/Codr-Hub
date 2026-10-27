@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import type { HubProject } from "@t3tools/contracts";
+import type { HubProject, HubTask, HubTaskRank } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -25,6 +25,8 @@ const project = (id: string, name: string): HubProject => ({
   sortIndex: 0,
   favorite: false,
   archived: false,
+  lane: null,
+  jobKind: "dev",
   createdAt: "2026-10-05T00:00:00.000Z",
   updatedAt: "2026-10-05T00:00:00.000Z",
 });
@@ -280,6 +282,41 @@ it.layer(NodeServices.layer)("codr-hub portfolio store", (it) => {
       yield* fs.writeFileString(bad, '{"id":"bad"}');
       expect((yield* Store.readProjects(paths)).map((p) => p.id)).toEqual(["good"]);
       expect(yield* fs.readFileString(bad)).toBe('{"id":"bad"}');
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
+  it.effect("stores tasks per file and sweeps them with the project", () =>
+    Effect.gen(function* () {
+      const root = yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped({
+        prefix: "codr-hub-store-",
+      });
+      const paths = yield* node(root, "steve");
+      const keep: HubTask = {
+        id: "keep-1",
+        projectId: "keep",
+        title: "Keep",
+        description: "",
+        column: "todo",
+        rank: "a0" as HubTaskRank,
+        priority: "none",
+        deezCardId: null,
+        createdAt: "2026-10-05T00:00:00.000Z",
+        updatedAt: "2026-10-05T00:00:00.000Z",
+      };
+      const gone: HubTask = {
+        ...keep,
+        id: "gone-1",
+        projectId: "gone",
+        title: "Gone",
+      };
+      yield* Store.writeTask(paths, keep);
+      yield* Store.writeTask(paths, gone);
+      expect((yield* Store.readTasks(paths)).map((task) => task.id).toSorted()).toEqual([
+        "gone-1",
+        "keep-1",
+      ]);
+      yield* Store.removeTasksForProject(paths, "gone");
+      expect((yield* Store.readTasks(paths)).map((task) => task.id)).toEqual(["keep-1"]);
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 });

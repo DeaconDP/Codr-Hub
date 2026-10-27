@@ -2087,8 +2087,20 @@ const makeWsRpcLayer = (
           observeRpcStream(WS_METHODS.hubSubscribe, codrHub.subscribe(), {
             "rpc.aggregate": "codrHub",
           }),
+        [WS_METHODS.hubBoardSubscribe]: (input) =>
+          observeRpcStream(WS_METHODS.hubBoardSubscribe, codrHub.subscribeBoard(input.projectId), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubBoardApply]: (input) =>
+          observeRpcEffect(WS_METHODS.hubBoardApply, codrHub.applyBoard(input), {
+            "rpc.aggregate": "codrHub",
+          }),
         [WS_METHODS.hubUpsertProject]: (input) =>
           observeRpcEffect(WS_METHODS.hubUpsertProject, codrHub.upsertProject(input), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubRecordTestVerdict]: (input) =>
+          observeRpcEffect(WS_METHODS.hubRecordTestVerdict, codrHub.recordTestVerdict(input), {
             "rpc.aggregate": "codrHub",
           }),
         [WS_METHODS.hubDeleteProject]: (input) =>

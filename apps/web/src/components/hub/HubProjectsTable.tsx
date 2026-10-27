@@ -11,6 +11,7 @@ import {
   type HubSnapshot,
   type HubUpsertProjectInput,
 } from "@t3tools/contracts";
+import { Link } from "@tanstack/react-router";
 import { DownloadIcon, FolderXIcon, PlusIcon, StarIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -210,17 +211,28 @@ function ProjectRow(props: {
         <span className="text-muted-foreground tabular-nums">{props.index + 1}</span>
       </TableCell>
       <TableCell className="max-w-72">
-        <button
-          type="button"
-          onClick={props.onEdit}
-          className="flex min-w-0 items-center gap-1.5 rounded-sm text-start font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-        >
-          {project.favorite ? (
-            <StarIcon aria-label="Favourite" className="size-3.5 shrink-0 fill-current" />
-          ) : null}
-          <span className="truncate">{project.name}</span>
-        </button>
-        <HostOverlay nodes={view.nodes} />
+        <div className="flex min-w-0 items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={props.onEdit}
+              className="flex min-w-0 items-center gap-1.5 rounded-sm text-start font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              {project.favorite ? (
+                <StarIcon aria-label="Favourite" className="size-3.5 shrink-0 fill-current" />
+              ) : null}
+              <span className="truncate">{project.name}</span>
+            </button>
+            <HostOverlay nodes={view.nodes} />
+          </div>
+          <Button
+            size="xs"
+            variant="ghost-muted"
+            render={<Link to="/hub/projects/$projectId/board" params={{ projectId: project.id }} />}
+          >
+            Board
+          </Button>
+        </div>
       </TableCell>
       <TableCell>
         <CompactSelect

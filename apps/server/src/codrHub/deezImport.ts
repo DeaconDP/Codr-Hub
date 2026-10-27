@@ -1,14 +1,24 @@
 /**
- * Maps Deez-Project-Manager's `projects.json` onto hub projects. Pure and
- * tolerant: Deez-PM's file has grown fields over time, so every field is
- * read defensively and unknown values fall back to safe defaults.
+ * Maps Deez-Project-Manager's `projects.json` onto hub projects and tasks.
+ * Pure and tolerant: Deez-PM's file has grown fields over time, so every field
+ * is read defensively and unknown values fall back to safe defaults.
  *
  * Re-importing never overwrites what the owner has edited in the hub; it only
  * adds missing projects and fills this node's checkout path and repo URL.
+ * Tasks skip any card whose deezCardId is already present.
  *
  * @module codrHub/deezImport
  */
-import type { HubPriority, HubProject, HubProjectStatus, HubSdlcStage } from "@t3tools/contracts";
+import type {
+  HubPriority,
+  HubProject,
+  HubProjectStatus,
+  HubSdlcStage,
+  HubTask,
+  HubTaskRank,
+} from "@t3tools/contracts";
+
+import { hubTaskFromDeez, mapDeezColumn, mintRank, type DeezTaskInput } from "./board.ts";
 
 const PRIORITY: Record<string, HubPriority> = {
   Default: "none",
@@ -83,6 +93,8 @@ export function mapDeezProject(
     sortIndex: typeof raw.sortIndex === "number" ? raw.sortIndex : 0,
     favorite: raw.favorite === true,
     archived: raw.archived === true || str(raw.status) === "Delete",
+    lane: null,
+    jobKind: "dev",
     createdAt: updatedAt,
     updatedAt,
   };
@@ -136,4 +148,127 @@ export function mergeDeezImport(
     updated += 1;
   }
   return { upserts, imported, updated, skipped };
+}
+
+/** Deez UUID project id → Hub slug (from project name). */
+export function deezUuidToHubSlug(
+  rawProjects: ReadonlyArray<Record<string, unknown>>,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const raw of rawProjects) {
+    const id = str(raw.id);
+    const name = str(raw.name);
+    if (id === null || name === null) continue;
+    map.set(id, slugifyProjectName(name));
+  }
+  return map;
+}
+
+/** Reads the task list from a parsed Deez-PM file (object form only). */
+export function readDeezTasks(json: unknown): ReadonlyArray<Record<string, unknown>> {
+  if (json === null || typeof json !== "object" || Array.isArray(json)) return [];
+  const list = (json as { tasks?: unknown }).tasks;
+  if (!Array.isArray(list)) return [];
+  return list.filter(
+    (item): item is Record<string, unknown> => item !== null && typeof item === "object",
+  );
+}
+
+const commentsFrom = (value: unknown): ReadonlyArray<{ readonly body: string }> | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const comments: { body: string }[] = [];
+  for (const entry of value) {
+    if (entry === null || typeof entry !== "object") continue;
+    const body = str((entry as { body?: unknown }).body);
+    if (body !== null) comments.push({ body });
+  }
+  return comments;
+};
+
+const FALLBACK_ISO = "1970-01-01T00:00:00.000Z";
+
+const parseDeezTask = (
+  raw: Record<string, unknown>,
+):
+  | (DeezTaskInput & {
+      readonly deezProjectId: string;
+      readonly sortIndex: number;
+    })
+  | null => {
+  const id = str(raw.id);
+  const deezProjectId = str(raw.projectId);
+  const title = str(raw.title);
+  if (id === null || deezProjectId === null || title === null) return null;
+  const comments = commentsFrom(raw.comments);
+  return {
+    id,
+    deezProjectId,
+    title,
+    description: typeof raw.description === "string" ? raw.description : "",
+    column: str(raw.column) ?? "Backlog",
+    priority: str(raw.priority) ?? "Default",
+    ...(comments !== undefined ? { comments } : {}),
+    sortIndex: typeof raw.sortIndex === "number" ? raw.sortIndex : 0,
+    createdAt: str(raw.createdAt) ?? FALLBACK_ISO,
+    updatedAt: str(raw.updatedAt) ?? FALLBACK_ISO,
+  };
+};
+
+export interface DeezTaskMergeResult {
+  readonly upserts: ReadonlyArray<HubTask>;
+  readonly imported: number;
+  readonly skipped: number;
+}
+
+/**
+ * Additive task import: UUID project ids map to Hub slugs; existing deezCardId
+ * values are skipped. Ranks append within each Hub column so order follows Deez
+ * sortIndex among newly imported cards.
+ */
+export function mergeDeezTasks(
+  existing: ReadonlyArray<HubTask>,
+  rawTasks: ReadonlyArray<Record<string, unknown>>,
+  uuidToSlug: ReadonlyMap<string, string>,
+): DeezTaskMergeResult {
+  const knownDeez = new Set(
+    existing.map((task) => task.deezCardId).filter((id): id is string => id !== null),
+  );
+  const byId = new Map(existing.map((task) => [task.id, task]));
+  // Last rank per project+column among cards we will keep (existing + new).
+  const lastRank = new Map<string, HubTaskRank>();
+  for (const task of existing) {
+    const key = `${task.projectId}\0${task.column}`;
+    const prev = lastRank.get(key);
+    if (prev === undefined || task.rank > prev) lastRank.set(key, task.rank);
+  }
+
+  const parsed = rawTasks
+    .map(parseDeezTask)
+    .filter((task): task is NonNullable<typeof task> => task !== null)
+    .sort((a, b) => a.sortIndex - b.sortIndex || a.id.localeCompare(b.id));
+
+  const upserts: HubTask[] = [];
+  let imported = 0;
+  let skipped = 0;
+  for (const deez of parsed) {
+    if (knownDeez.has(deez.id) || byId.has(deez.id)) {
+      skipped += 1;
+      continue;
+    }
+    const hubProjectId = uuidToSlug.get(deez.deezProjectId);
+    if (hubProjectId === undefined) {
+      skipped += 1;
+      continue;
+    }
+    const column = mapDeezColumn(deez.column);
+    const key = `${hubProjectId}\0${column}`;
+    const rank = mintRank(lastRank.get(key) ?? null, null);
+    const hub = hubTaskFromDeez(deez, hubProjectId, rank);
+    lastRank.set(key, hub.rank);
+    byId.set(hub.id, hub);
+    knownDeez.add(deez.id);
+    upserts.push(hub);
+    imported += 1;
+  }
+  return { upserts, imported, skipped };
 }

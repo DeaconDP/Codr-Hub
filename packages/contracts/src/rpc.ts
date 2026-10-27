@@ -309,6 +309,7 @@ import {
   HubImportInput,
   HubImportResult,
   HubOk,
+  HubRecordTestVerdictInput,
   HubRunAutopilotInput,
   HubRunAutopilotResult,
   HubSetNodeInput,
@@ -320,6 +321,7 @@ import {
   HubUpdateSettingsInput,
   HubUpsertProjectInput,
 } from "./codrHub.ts";
+import { HubBoardCommand, HubBoardSnapshot, HubBoardSubscribeInput } from "./codrHubBoard.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
   ScheduledTaskDeleteInput,
@@ -495,7 +497,10 @@ export const WS_METHODS = {
 
   // Codr-Hub
   hubSubscribe: "hub.subscribe",
+  hubBoardSubscribe: "hub.board.subscribe",
+  hubBoardApply: "hub.board.apply",
   hubUpsertProject: "hub.upsertProject",
+  hubRecordTestVerdict: "hub.recordTestVerdict",
   hubDeleteProject: "hub.deleteProject",
   hubSetStrategy: "hub.setStrategy",
   hubUpdateSettings: "hub.updateSettings",
@@ -1705,8 +1710,24 @@ const WsHubSubscribeRpc = Rpc.make(WS_METHODS.hubSubscribe, {
   error: HubRpcError,
   stream: true,
 });
+const WsHubBoardSubscribeRpc = Rpc.make(WS_METHODS.hubBoardSubscribe, {
+  payload: HubBoardSubscribeInput,
+  success: HubBoardSnapshot,
+  error: HubRpcError,
+  stream: true,
+});
+const WsHubBoardApplyRpc = Rpc.make(WS_METHODS.hubBoardApply, {
+  payload: HubBoardCommand,
+  success: HubBoardSnapshot,
+  error: HubRpcError,
+});
 const WsHubUpsertProjectRpc = Rpc.make(WS_METHODS.hubUpsertProject, {
   payload: HubUpsertProjectInput,
+  success: HubOk,
+  error: HubRpcError,
+});
+const WsHubRecordTestVerdictRpc = Rpc.make(WS_METHODS.hubRecordTestVerdict, {
+  payload: HubRecordTestVerdictInput,
   success: HubOk,
   error: HubRpcError,
 });
@@ -1832,7 +1853,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksDeleteRpc,
   WsScheduledTasksRunNowRpc,
   WsHubSubscribeRpc,
+  WsHubBoardSubscribeRpc,
+  WsHubBoardApplyRpc,
   WsHubUpsertProjectRpc,
+  WsHubRecordTestVerdictRpc,
   WsHubDeleteProjectRpc,
   WsHubSetStrategyRpc,
   WsHubUpdateSettingsRpc,

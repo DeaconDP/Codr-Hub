@@ -989,6 +989,11 @@ export function createServerEnvironmentAtoms<R, E>(
     label: "environment-data:server:hub:live",
     tag: WS_METHODS.hubSubscribe,
   });
+  /** Per-project kanban; separate from hubLive so HubSnapshot stays lean. */
+  const hubBoardLive = createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+    label: "environment-data:server:hub:board:live",
+    tag: WS_METHODS.hubBoardSubscribe,
+  });
   const hubMergedProjects = createHubMergedProjectsAtomFamily(hubLive);
 
   return {
@@ -1093,6 +1098,7 @@ export function createServerEnvironmentAtoms<R, E>(
     }),
     /** Codr-Hub snapshot: portfolio, pace, and autopilot state, re-sent after every change. */
     hubLive,
+    hubBoardLive,
     hubMergedProjects: hubMergedProjects.family,
     hubMergedProjectsEmpty: hubMergedProjects.empty,
     // A cold transcript scan is measured in seconds, so keep the result around
@@ -1301,9 +1307,19 @@ export function createServerEnvironmentAtoms<R, E>(
     }),
     // Codr-Hub. Portfolio writes share one serial lane per environment so
     // edits commit in the order the owner made them.
+    hubBoardApply: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubBoardApply",
+      tag: WS_METHODS.hubBoardApply,
+      concurrency: configConcurrency,
+    }),
     hubUpsertProject: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:hubUpsertProject",
       tag: WS_METHODS.hubUpsertProject,
+      concurrency: configConcurrency,
+    }),
+    hubRecordTestVerdict: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubRecordTestVerdict",
+      tag: WS_METHODS.hubRecordTestVerdict,
       concurrency: configConcurrency,
     }),
     hubDeleteProject: createEnvironmentRpcCommand(runtime, {

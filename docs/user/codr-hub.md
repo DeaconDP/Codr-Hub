@@ -9,6 +9,10 @@ Codr-Hub adds a **Hub** page (sidebar → Hub) that ranks your projects, shows h
 3. Click **Import from Deez-PM** to bring in your existing project list, or **Add project** to add one by hand. Imported projects start with autonomy **Off**.
 4. Check each project's checkout (click its name). The table unions every **connected** environment: each row lists which nodes have a path, and git or running work on that node. Rows that say **Path missing** on the selected machine cannot be worked on from there. Autopilot eligibility is only the environment you pick in the header, not another host's checkout.
 
+## Project board
+
+Open **Board** on a project row (or `/hub/projects/<id>/board`) for that project's Todo / In progress / Ready for testing / Done cards. Import from Deez-PM also brings cards across, mapping its five columns onto these four. Ready-for-testing cards are planning notes; they are separate from **Needs you** test handoffs. Narrow screens show one column at a time.
+
 ## Ranking
 
 Projects are ranked by **Strategy** first, then priority, then favourites. Add your strategic priorities in the Strategy panel, most important first, and link projects to them from the table.
