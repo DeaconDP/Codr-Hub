@@ -11,7 +11,7 @@ import { HubPriority, HubProjectStatus } from "./codrHub.ts";
 
 export const HUB_BOARD_COLUMNS = ["todo", "in_progress", "ready_for_testing", "done"] as const;
 export type HubBoardColumn = (typeof HUB_BOARD_COLUMNS)[number];
-export const HubBoardColumn = Schema.Literals(HUB_BOARD_COLUMNS);
+export const HubBoardColumn = Schema.Literals(["todo", "in_progress", "ready_for_testing", "done"]);
 
 /** Deez-PM's five columns collapse onto Hub's four. */
 export const DEEZ_COLUMN_TO_HUB = {
@@ -68,12 +68,13 @@ export type HubBoardProjection = {
 export function projectBoard(
   tasks: ReadonlyArray<HubTask> | ReadonlyMap<string, HubTask>,
 ): HubBoardProjection {
-  const list = Array.isArray(tasks) ? tasks : [...tasks.values()];
-  const projected = {
-    todo: [] as HubTask[],
-    in_progress: [] as HubTask[],
-    ready_for_testing: [] as HubTask[],
-    done: [] as HubTask[],
+  // Explicit HubTask[]: Array.isArray narrows ReadonlyArray to any[].
+  const list: HubTask[] = Array.isArray(tasks) ? [...tasks] : [...tasks.values()];
+  const projected: { [K in HubBoardColumn]: HubTask[] } = {
+    todo: [],
+    in_progress: [],
+    ready_for_testing: [],
+    done: [],
   };
   for (const task of list) {
     projected[task.column].push(task);
