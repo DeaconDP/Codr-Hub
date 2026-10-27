@@ -1,11 +1,17 @@
 import {
+  HUB_AUTONOMY_LABELS,
   HUB_STAGE_GROUPS,
   HUB_STAGE_LABELS,
   compareHubProjects,
   mergedProjectLastLaunchAt,
+  projectMatchesLane,
+  type HubAutonomy,
+  type HubLane,
   type HubMergedProjectView,
+  type HubNodeCheckout,
   type HubPaceState,
   type HubPriority,
+  type HubProject,
   type HubProjectStatus,
   type HubSdlcMode,
   type HubSdlcStage,
@@ -28,22 +34,67 @@ export const STATUS_OPTIONS: ReadonlyArray<{ value: HubProjectStatus; label: str
   { value: "done", label: "Done" },
 ];
 
-export const AUTONOMY_OPTIONS = [
-  { value: 0, label: "Off" },
-  { value: 25, label: "25% · Plan" },
-  { value: 50, label: "50% · Supervised" },
-  { value: 75, label: "75% · Draft PR" },
-  { value: 100, label: "100% · Full auto" },
-] as const;
+export const AUTONOMY_OPTIONS: ReadonlyArray<{ value: HubAutonomy; label: string }> = (
+  [0, 25, 50, 75, 100] as const
+).map((value) => ({ value, label: HUB_AUTONOMY_LABELS[value] }));
 
-export const PACE_STATE: Record<
-  HubPaceState,
-  { label: string; variant: "warning" | "success" | "info" | "outline" }
-> = {
-  behind: { label: "Behind pace", variant: "warning" },
-  on_pace: { label: "On pace", variant: "success" },
-  capped: { label: "Capped", variant: "info" },
-  unavailable: { label: "Unavailable", variant: "outline" },
+const AUTONOMY_HINT: Record<HubAutonomy, string> = {
+  0: "Autopilot skips this project.",
+  25: "Proposes a plan. No file changes.",
+  50: "Edits in a worktree. You approve each step.",
+  75: "Opens a draft pull request. Never merges.",
+  100: "Merges when tests pass.",
+};
+
+export function autonomyHint(autonomy: HubAutonomy) {
+  return AUTONOMY_HINT[autonomy];
+}
+
+/**
+ * One line under a project name. Off, Active, and the first stage are the
+ * defaults, so they stay quiet and the checkout (or a real exception) shows.
+ */
+export function projectGlance(input: {
+  readonly project: HubProject;
+  readonly nodes: ReadonlyArray<HubNodeCheckout>;
+  readonly selectedNodeName: string;
+  readonly strategy: ReadonlyArray<HubStrategyPriority>;
+  readonly mode: HubSdlcMode;
+}): string {
+  const { project, nodes, strategy, mode } = input;
+  const selected =
+    nodes.find((node) => node.nodeName === input.selectedNodeName) ??
+    (nodes.length === 1 ? nodes[0] : undefined);
+  const strategyTitle = strategy.find((priority) => priority.id === project.strategyId)?.title;
+  const stages = stageOptions(mode);
+  const stageValue = stageSelectValue(project.stage, mode);
+  const stage = stageValue === stages[0]?.value ? null : labelOf(stages, stageValue);
+  const review =
+    selected && selected.awaitingReview > 0 ? `${selected.awaitingReview} to review` : null;
+  return [
+    project.autonomy === 0 ? null : HUB_AUTONOMY_LABELS[project.autonomy],
+    project.status === "active" ? null : labelOf(STATUS_OPTIONS, project.status),
+    strategyTitle ?? stage,
+    hostBit(selected),
+    review,
+  ]
+    .filter((part) => part !== null && part !== undefined)
+    .join(" · ");
+}
+
+function hostBit(node: HubNodeCheckout | undefined): string | null {
+  if (node === undefined || node.localPath === null) return "No checkout";
+  if (!node.pathExists) return "Path missing";
+  if (node.git === null) return "Not a git repo";
+  const branch = node.git.branch ?? "detached";
+  return node.git.dirty ? `${branch} · changes` : branch;
+}
+
+export const PACE_STATE: Record<HubPaceState, string> = {
+  behind: "Behind pace",
+  on_pace: "On pace",
+  capped: "Capped",
+  unavailable: "Unavailable",
 };
 
 export const labelOf = <V>(options: ReadonlyArray<{ value: V; label: string }>, value: V) =>
@@ -73,13 +124,6 @@ export function stageSelectValue(stage: HubSdlcStage, mode: HubSdlcMode): HubSdl
 
 export type HubProjectFilter = "open" | "all" | HubProjectStatus | "archived";
 
-export const FILTER_OPTIONS: ReadonlyArray<{ value: HubProjectFilter; label: string }> = [
-  { value: "open", label: "Open" },
-  { value: "all", label: "All" },
-  ...STATUS_OPTIONS,
-  { value: "archived", label: "Archived" },
-];
-
 export type HubProjectSort = "rank" | "name" | "recent";
 
 /** "Open" hides done and archived work, which is what the owner scans day to day. */
@@ -90,9 +134,11 @@ export function filterAndSortProjects(
     readonly query: string;
     readonly sort: HubProjectSort;
     readonly strategy: ReadonlyArray<HubStrategyPriority>;
+    readonly lane?: HubLane | null;
   },
 ): HubMergedProjectView[] {
   const query = options.query.trim().toLowerCase();
+  const lane = options.lane ?? null;
   const matchesFilter = (view: HubMergedProjectView) => {
     const { project } = view;
     switch (options.filter) {
@@ -124,7 +170,11 @@ export function filterAndSortProjects(
     }
     return rank(a.project, b.project);
   };
-  return views.filter((view) => matchesFilter(view) && matchesQuery(view)).toSorted(compare);
+  return views
+    .filter(
+      (view) => matchesFilter(view) && matchesQuery(view) && projectMatchesLane(view.project, lane),
+    )
+    .toSorted(compare);
 }
 
 /** A short, file-safe id with a random suffix so two nodes adding the same title never collide. */

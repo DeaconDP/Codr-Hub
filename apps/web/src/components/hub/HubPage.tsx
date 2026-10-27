@@ -1,6 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { PlayIcon } from "lucide-react";
 import { useState } from "react";
 
 import { isElectron } from "../../env";
@@ -24,6 +23,7 @@ import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { HubPacePanel } from "./HubPacePanel";
 import { HubProjectsTable } from "./HubProjectsTable";
+import { HubTestQueue } from "./HubTestQueue";
 import { HubSettingsPanel } from "./HubSettingsPanel";
 import { HubStrategyPanel } from "./HubStrategyPanel";
 import { useHubAction } from "./useHubAction";
@@ -92,7 +92,7 @@ export function HubPage() {
         ) : null}
       </WorkspaceBreadcrumb>
       {environment && snapshot ? (
-        <AutopilotControls
+        <AutopilotSwitch
           environmentId={environment.environmentId}
           enabled={snapshot.autopilotEnabled}
         />
@@ -126,7 +126,23 @@ export function HubPage() {
                 <Skeleton className="h-64 w-full" />
               </div>
             ) : (
-              <div className="flex flex-col gap-10">
+              <div className="flex flex-col gap-8">
+                {snapshot?.fleet && snapshot.fleet.phase !== "current" ? (
+                  <p
+                    role="status"
+                    className={
+                      snapshot.fleet.phase === "stuck"
+                        ? "text-sm text-foreground"
+                        : "text-sm text-muted-foreground"
+                    }
+                  >
+                    {snapshot.fleet.detail}
+                  </p>
+                ) : null}
+                <HubTestQueue
+                  environmentId={environment.environmentId}
+                  projects={merged.projects}
+                />
                 {snapshot ? (
                   <HubPacePanel
                     environmentId={environment.environmentId}
@@ -139,7 +155,7 @@ export function HubPage() {
                     connected environments are still listed.
                   </p>
                 ) : (
-                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-16 w-full" />
                 )}
                 <HubProjectsTable
                   environmentId={environment.environmentId}
@@ -168,38 +184,22 @@ export function HubPage() {
   );
 }
 
-function AutopilotControls(props: { environmentId: EnvironmentId; enabled: boolean }) {
+function AutopilotSwitch(props: { environmentId: EnvironmentId; enabled: boolean }) {
   const setNode = useHubAction(
     serverEnvironment.hubSetNode,
     props.environmentId,
     "Could not change the autopilot",
   );
-  const runOnce = useHubAction(
-    serverEnvironment.hubRunAutopilot,
-    props.environmentId,
-    "Autopilot run failed",
-  );
   return (
-    <div className="ms-auto flex items-center gap-3">
-      <Button
-        size="xs"
-        variant="outline"
-        disabled={runOnce.busy}
-        onClick={() => void runOnce.run({})}
-        title="Launch one autopilot thread now on the top eligible project"
-      >
-        <PlayIcon className="size-3" />
-        {runOnce.busy ? "Launching…" : "Run once"}
-      </Button>
-      <label className="flex items-center gap-2 text-sm">
-        <Switch
-          aria-label="Autopilot"
-          checked={props.enabled}
-          disabled={setNode.busy}
-          onCheckedChange={(checked) => void setNode.run({ autopilotEnabled: checked })}
-        />
-        Autopilot
-      </label>
-    </div>
+    <label className="ms-auto flex min-h-11 items-center gap-2 text-sm">
+      <Switch
+        aria-label="Autopilot"
+        checked={props.enabled}
+        disabled={setNode.busy}
+        aria-busy={setNode.busy}
+        onCheckedChange={(checked) => void setNode.run({ autopilotEnabled: checked })}
+      />
+      Autopilot
+    </label>
   );
 }

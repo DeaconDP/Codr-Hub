@@ -59,22 +59,17 @@ export function HubStrategyPanel(props: {
 
   return (
     <section aria-labelledby="hub-strategy-heading" className="flex flex-col gap-3">
-      <div>
-        <h2 id="hub-strategy-heading" className="text-sm font-medium text-foreground">
-          Strategy
-        </h2>
-        <p className="text-xs text-muted-foreground">
-          Specific priorities, most important first. Linked projects outrank everything else.
-        </p>
-      </div>
+      <h2 id="hub-strategy-heading" className="text-sm font-medium text-foreground">
+        Strategy
+      </h2>
       {strategy.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No priorities yet. Add one, such as “Ship Emily-OS v1”, then link projects to it.
+          Add what matters most, such as “Ship Emily-OS v1”. Linked projects rank first.
         </p>
       ) : (
         <ol className="flex flex-col divide-y rounded-lg border">
           {strategy.map((priority, index) => (
-            <li key={priority.id} className="flex items-center gap-2 px-2 py-1.5">
+            <li key={priority.id} className="flex min-h-11 items-center gap-2 px-2 py-1.5">
               <span className="w-5 text-center text-xs text-muted-foreground tabular-nums">
                 {index + 1}
               </span>

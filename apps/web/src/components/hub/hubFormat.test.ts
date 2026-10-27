@@ -1,7 +1,13 @@
 import type { HubMergedProjectView, HubProject } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { filterAndSortProjects, newStrategyId, stageOptions, stageSelectValue } from "./hubFormat";
+import {
+  filterAndSortProjects,
+  newStrategyId,
+  projectGlance,
+  stageOptions,
+  stageSelectValue,
+} from "./hubFormat";
 
 const view = (
   overrides: Partial<HubProject>,
@@ -24,6 +30,8 @@ const view = (
     sortIndex: 0,
     favorite: false,
     archived: false,
+    lane: null,
+    jobKind: "dev",
     createdAt: "2026-10-01T00:00:00.000Z",
     updatedAt: "2026-10-01T00:00:00.000Z",
     ...overrides,
@@ -42,6 +50,7 @@ const view = (
             lastLaunchAt,
           },
         ],
+  handoff: null,
 });
 
 const views = [
@@ -66,6 +75,21 @@ describe("hub project list", () => {
     ]);
   });
 
+  it("filters by lane without changing rank", () => {
+    const ranked = filterAndSortProjects(
+      [
+        view({ id: "open-missing", name: "Missing", lane: null, priority: "critical" }),
+        view({ id: "immersion", name: "Immerse", lane: "immersion", priority: "low" }),
+        view({ id: "automation", name: "Auto", lane: "automation", priority: "high" }),
+      ],
+      { ...base, filter: "all", lane: "immersion" },
+    );
+    expect(ids(ranked)).toEqual(["immersion"]);
+    expect(ids(filterAndSortProjects(views, { ...base, filter: "all", lane: null }))).toEqual(
+      ids(filterAndSortProjects(views, { ...base, filter: "all" })),
+    );
+  });
+
   it("sorts by name or most recent activity", () => {
     expect(ids(filterAndSortProjects(views, { ...base, filter: "all", sort: "name" }))).toEqual([
       "a",
@@ -88,6 +112,59 @@ describe("hub stages", () => {
     ]);
     expect(stageSelectValue("test", "three")).toBe("develop");
     expect(stageSelectValue("test", "six")).toBe("test");
+  });
+});
+
+describe("project glance", () => {
+  const strategy = [{ id: "s1", title: "Ship Emily-OS", notes: "" }];
+  const glance = (
+    project: ReturnType<typeof view>["project"],
+    nodes: ReturnType<typeof view>["nodes"] = [
+      {
+        nodeName: "Steve",
+        localPath: "/work/app",
+        pathExists: true,
+        git: { branch: "main", ahead: 0, behind: 0, dirty: false, hasUpstream: true },
+        awaitingReview: 0,
+        running: 0,
+        lastLaunchAt: null,
+      },
+    ],
+  ) =>
+    projectGlance({
+      project,
+      nodes,
+      selectedNodeName: "Steve",
+      strategy,
+      mode: "three",
+    });
+
+  it("hides Off and the default stage so the checkout is the line", () => {
+    expect(glance(view({ stage: "plan", autonomy: 0, status: "active" }).project)).toBe("main");
+    expect(glance(view({ stage: "plan", status: "paused" }).project)).toBe("Paused · main");
+  });
+
+  it("leads with autonomy and the linked strategy", () => {
+    expect(glance(view({ strategyId: "s1", autonomy: 25 }).project)).toBe(
+      "Plan · Ship Emily-OS · main",
+    );
+  });
+
+  it("uses the stage when nothing is linked, and flags a missing checkout", () => {
+    expect(glance(view({ stage: "develop" }).project, [])).toBe("Dev & Test · No checkout");
+    expect(
+      glance(view({ stage: "test" }).project, [
+        {
+          nodeName: "Steve",
+          localPath: "/missing",
+          pathExists: false,
+          git: null,
+          awaitingReview: 2,
+          running: 0,
+          lastLaunchAt: null,
+        },
+      ]),
+    ).toBe("Dev & Test · Path missing · 2 to review");
   });
 });
 
