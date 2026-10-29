@@ -1,10 +1,25 @@
 import type {
+  CheckpointId,
+  MessageId,
+  NodeId,
+  OrchestrationV2Checkpoint,
   OrchestrationV2DomainEvent,
   OrchestrationV2ContextHandoff,
+  OrchestrationV2Subagent,
   OrchestrationV2ThreadProjection,
+  OrchestrationV2ThreadStreamItem,
   OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
-import { compactDynamicToolOutput, toolOutputIndicatesFailure } from "@t3tools/shared/toolOutput";
+import {
+  dedupeSubagentBodies,
+  dedupeTurnItemBodies,
+} from "@t3tools/shared/orchestrationV2DedupedBodies";
+import {
+  compactDynamicToolOutput,
+  omitToolOutputImageData,
+  toolOutputImages,
+  toolOutputIndicatesFailure,
+} from "@t3tools/shared/toolOutput";
 
 const MAX_DETAIL_STRING_BYTES = 32_768;
 const MAX_DYNAMIC_VALUE_BYTES = 16_384;
@@ -20,13 +35,27 @@ function truncateDetail(
   ) {
     return value;
   }
-  // UTF-8 needs at least one byte per UTF-16 code unit. Only encode the prefix
-  // that could fit, rather than allocating a buffer for the complete output.
+  // UTF-8 needs at least one byte per UTF-16 unit; encode only a potentially fitting prefix.
   const prefix = Buffer.from(value.slice(0, maxBytes), "utf8")
     .subarray(0, maxBytes)
     .toString("utf8")
     .replace(/\uFFFD$/u, "");
   return `${prefix}\n… output truncated for transport`;
+}
+
+/** Bound stored diffs to the client wire limit to avoid retaining invisible data in SQLite and heap. */
+export function boundFileChangeForStorage(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
+  if (item.type !== "file_change") return item;
+  const { diffStr, oldStr, newStr } = item;
+  const bounded = {
+    ...item,
+    ...(diffStr === undefined ? {} : { diffStr: truncateDetail(diffStr) }),
+    ...(oldStr === undefined ? {} : { oldStr: truncateDetail(oldStr) }),
+    ...(newStr === undefined ? {} : { newStr: truncateDetail(newStr) }),
+  };
+  return bounded.diffStr === diffStr && bounded.oldStr === oldStr && bounded.newStr === newStr
+    ? item
+    : bounded;
 }
 
 function summarizeDynamicValue(value: unknown): unknown {
@@ -45,7 +74,6 @@ function summarizeDynamicValue(value: unknown): unknown {
     serialized = "Unserializable tool output";
   }
 
-  // Preserve the first nonblank normalized line, but stop after the preview.
   // Splitting and normalizing every line can allocate far more than the input.
   const start = /\S/u.exec(serialized)?.index;
   let firstLine = start === undefined ? "Large tool output" : "";
@@ -76,8 +104,6 @@ export function projectTurnItemForWire(item: OrchestrationV2TurnItem): Orchestra
     }
     case "command_execution": {
       const { output, ...projected } = item;
-      // Clients used this preview to recognize provider-reported failures. Keep
-      // the outcome without retaining or serializing the output that proved it.
       const failed =
         item.outputIndicatesFailure === true ||
         (item.exitCode !== undefined && item.exitCode !== 0) ||
@@ -90,10 +116,7 @@ export function projectTurnItemForWire(item: OrchestrationV2TurnItem): Orchestra
       };
     }
     case "file_change": {
-      // File identity and counts are enough for activity. Full diffs already
-      // have a dedicated read path and remain intact in persistence.
       const { diffStr, oldStr: _old, newStr: _new, ...projected } = item;
-      // A failed edit stores the provider's error where the diff would be.
       return item.status === "failed" && diffStr?.trim()
         ? { ...projected, diffStr: truncateDetail(diffStr) }
         : projected;
@@ -132,7 +155,6 @@ function boundDynamicValue(value: unknown): unknown {
   if (typeof value === "string") return truncateDetail(value, MAX_ON_DEMAND_BYTES);
   let json: string;
   try {
-    // Compact, so measuring does not inflate the value; clients indent it.
     json = JSON.stringify(value) ?? String(value);
   } catch {
     return "Unserializable tool value";
@@ -142,10 +164,20 @@ function boundDynamicValue(value: unknown): unknown {
     : truncateDetail(json, MAX_ON_DEMAND_BYTES);
 }
 
-/**
- * Projects one item for an on-demand detail read: keeps the input and output
- * the timeline withholds, bounded so a huge result cannot stall the socket.
- */
+/** Preserve ordered image markers in truncated output so clients can load images by index. */
+function boundToolOutput(output: unknown): unknown {
+  const omitted = omitToolOutputImageData(output);
+  const bounded = boundDynamicValue(omitted);
+  if (typeof bounded !== "string" || typeof omitted === "string") return bounded;
+  const images = toolOutputImages(omitted);
+  return images.length === 0
+    ? bounded
+    : [
+        { type: "text", text: bounded },
+        ...images.map((image) => ({ type: "image", mimeType: image.mimeType })),
+      ];
+}
+
 export function projectTurnItemForDetail(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
   switch (item.type) {
     case "command_execution":
@@ -158,7 +190,7 @@ export function projectTurnItemForDetail(item: OrchestrationV2TurnItem): Orchest
       return {
         ...item,
         input: boundDynamicValue(item.input),
-        output: boundDynamicValue(item.output),
+        output: boundToolOutput(item.output),
       };
     case "subagent":
       return {
@@ -168,8 +200,20 @@ export function projectTurnItemForDetail(item: OrchestrationV2TurnItem): Orchest
         result:
           item.result === null ? null : (truncateDetail(item.result, MAX_ON_DEMAND_BYTES) ?? null),
       };
-    case "handoff":
     case "file_change":
+      return {
+        ...projectTurnItemForWire(item),
+        ...(item.diffStr === undefined
+          ? {}
+          : { diffStr: truncateDetail(item.diffStr, MAX_ON_DEMAND_BYTES) }),
+        ...(!item.diffStr?.trim() && item.oldStr !== undefined
+          ? { oldStr: truncateDetail(item.oldStr, MAX_ON_DEMAND_BYTES) }
+          : {}),
+        ...(!item.diffStr?.trim() && item.newStr !== undefined
+          ? { newStr: truncateDetail(item.newStr, MAX_ON_DEMAND_BYTES) }
+          : {}),
+      };
+    case "handoff":
       return projectTurnItemForWire(item);
     default:
       return item;
@@ -214,4 +258,65 @@ export function projectDomainEventForWire(
     : event.type === "context-handoff.updated"
       ? { ...event, payload: projectContextHandoffForWire(event.payload) }
       : event;
+}
+
+const LIVE_DEDUPE_MEMORY = 32;
+
+function remember<K, V>(memory: Map<K, V>, key: K, value: V): void {
+  memory.delete(key);
+  memory.set(key, value);
+  if (memory.size > LIVE_DEDUPE_MEMORY) memory.delete(memory.keys().next().value as K);
+}
+
+/**
+ * One per subscription, after coalescing, so it remembers only records the client received. A
+ * record event comes before the turn item that repeats its body, so the item (or a repeated
+ * subagent record) ships blank and marked. The other order, or a forgotten record, only costs
+ * bytes: the repeat ships whole.
+ */
+export function makeLiveBodyDeduper(): (
+  item: OrchestrationV2ThreadStreamItem,
+) => OrchestrationV2ThreadStreamItem {
+  const messageText = new Map<MessageId, string>();
+  const checkpointFiles = new Map<CheckpointId, OrchestrationV2Checkpoint["files"]>();
+  const subagents = new Map<NodeId, Pick<OrchestrationV2Subagent, "prompt" | "result">>();
+  const source = {
+    messageText: (id: MessageId) => messageText.get(id),
+    checkpointFiles: (id: CheckpointId) => checkpointFiles.get(id),
+    subagent: (id: NodeId) => subagents.get(id),
+  };
+  const rememberSubagent = ({ id, prompt, result }: OrchestrationV2Subagent) =>
+    remember(subagents, id, { prompt, result });
+  return (item) => {
+    if (item.kind === "snapshot") {
+      // The client now holds exactly these records; their bodies are never blanked.
+      const { messages, checkpoints, subagents: records } = item.projection;
+      for (const message of messages) remember(messageText, message.id, message.text);
+      for (const checkpoint of checkpoints)
+        remember(checkpointFiles, checkpoint.id, checkpoint.files);
+      for (const subagent of records) rememberSubagent(subagent);
+      return item;
+    }
+    if (item.kind !== "event") return item;
+    const { event } = item;
+    switch (event.type) {
+      case "message.updated":
+        remember(messageText, event.payload.id, event.payload.text);
+        return item;
+      case "checkpoint.captured":
+        remember(checkpointFiles, event.payload.id, event.payload.files);
+        return item;
+      case "subagent.updated": {
+        const payload = dedupeSubagentBodies(event.payload, subagents.get(event.payload.id));
+        rememberSubagent(event.payload);
+        return payload === event.payload ? item : { ...item, event: { ...event, payload } };
+      }
+      case "turn-item.updated": {
+        const payload = dedupeTurnItemBodies(event.payload, source);
+        return payload === event.payload ? item : { ...item, event: { ...event, payload } };
+      }
+      default:
+        return item;
+    }
+  };
 }
