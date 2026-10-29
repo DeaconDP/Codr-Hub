@@ -13,10 +13,9 @@ if ! command -v vp >/dev/null; then
 fi
 command -v vp >/dev/null || pause_exit "vp installed but not found on PATH. Open a new terminal and run run.command again."
 
-if [ ! -d node_modules ]; then
-  echo "Installing dependencies..."
-  vp i || pause_exit "Dependency install failed."
-fi
+# Always install: a no-op when up to date, and picks up changes after a pull.
+echo "Installing dependencies..."
+vp i || pause_exit "Dependency install failed."
 
 # State goes in this checkout's gitignored .t3, never the live ~/.t3 install.
 vp run dev:desktop --home-dir "$PWD/.t3" || pause_exit "Dev app exited with an error."

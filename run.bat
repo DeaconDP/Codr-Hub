@@ -13,10 +13,9 @@ where vp >nul 2>&1 || (
 )
 where vp >nul 2>&1 || (echo vp installed but not found on PATH. Open a new terminal and run run.bat again. & pause & exit /b 1)
 
-if not exist node_modules (
-  echo Installing dependencies...
-  call vp i || (echo Dependency install failed. & pause & exit /b 1)
-)
+rem Always install: a no-op when up to date, and picks up changes after a pull.
+echo Installing dependencies...
+call vp i || (echo Dependency install failed. & pause & exit /b 1)
 
 rem Opens the T3 Code desktop (Electron) app; it builds and runs the server itself.
 rem State goes in this checkout's gitignored .t3, never the live ~/.t3 install.
