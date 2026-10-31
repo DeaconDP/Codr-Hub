@@ -2,7 +2,7 @@ import type { EnvironmentId, HubMergedProjectView, HubSnapshot } from "@t3tools/
 import { mergeHubProjectViews } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 export type HubMergedProjectsLive = {
   readonly projects: ReadonlyArray<HubMergedProjectView>;

@@ -186,3 +186,18 @@ export function newStrategyId(title: string, random: string) {
     .slice(0, 40);
   return `${slug || "priority"}-${random.slice(0, 6)}`;
 }
+
+/** Countdown to a future instant: "3h left", "Soon", or "Expired". */
+export function formatTimeUntilLabel(isoDate: string, nowMs: number = Date.now()): string {
+  const targetMs = Date.parse(isoDate);
+  if (Number.isNaN(targetMs)) return "";
+  const seconds = Math.floor((targetMs - nowMs) / 1000);
+  if (seconds <= 0) return "Expired";
+  if (seconds < 5) return "Soon";
+  if (seconds < 60) return `${seconds}s left`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m left`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h left`;
+  return `${Math.floor(hours / 24)}d left`;
+}

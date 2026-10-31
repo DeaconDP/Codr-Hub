@@ -6,7 +6,7 @@ import {
 } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
 import { StarIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import { serverEnvironment } from "../../state/server";
@@ -35,16 +35,12 @@ export function HubProjectsTable(props: {
   );
   const [importNote, setImportNote] = useState<string | null>(null);
 
-  const rows = useMemo(
-    () =>
-      filterAndSortProjects(projects, {
-        filter: showFinished ? "all" : "open",
-        sort: "rank",
-        query,
-        strategy: snapshot.strategy,
-      }),
-    [projects, query, showFinished, snapshot.strategy],
-  );
+  const rows = filterAndSortProjects(projects, {
+    filter: showFinished ? "all" : "open",
+    sort: "rank",
+    query,
+    strategy: snapshot.strategy,
+  });
   const finishedCount = projects.filter(
     (view) => view.project.archived || view.project.status === "done",
   ).length;

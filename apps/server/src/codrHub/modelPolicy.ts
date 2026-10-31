@@ -86,7 +86,7 @@ export type LaunchModelChoice =
 
 const NOT_NOW: LaunchModelChoice = { _tag: "NotNow" };
 
-export function launchWorkKind(jobKind: HubJobKind, handoff: TestHandoff | null): HubJobKind {
+function launchWorkKind(jobKind: HubJobKind, handoff: TestHandoff | null): HubJobKind {
   if (handoff?.kind === "fix") return "edit";
   return jobKind;
 }

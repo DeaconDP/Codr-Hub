@@ -288,9 +288,12 @@ describe("hubProjectViewForNode", () => {
   });
 });
 
+const decodeHubProject = Schema.decodeSync(HubProjectSchema);
+const decodeHubProjectView = Schema.decodeSync(HubProjectViewSchema);
+
 describe("HubProject decode", () => {
   it("decodes an old project JSON object that omits lane and jobKind", () => {
-    const decoded = Schema.decodeSync(HubProjectSchema)({
+    const decoded = decodeHubProject({
       id: "alpha",
       name: "Alpha",
       priority: "medium",
@@ -313,7 +316,7 @@ describe("HubProject decode", () => {
     expect(decoded.lane).toBeNull();
     expect(decoded.jobKind).toBe("dev");
 
-    const view = Schema.decodeSync(HubProjectViewSchema)({
+    const view = decodeHubProjectView({
       project: decoded,
       localPath: null,
       pathExists: false,

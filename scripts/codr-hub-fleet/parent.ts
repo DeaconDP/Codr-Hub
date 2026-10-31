@@ -1,12 +1,9 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalDate:off globalConsole:off - Standalone supervisor owns its native process lifecycle outside the server runtime.
 /**
- * Login parent for one Codr-Hub checkout.
- * It is the only process that fetches this repo. The server writes turn
- * facts and reads the report. Neither process writes the other's file.
- *
- *   node scripts/codr-hub-fleet/parent.ts --arm
- *   node scripts/codr-hub-fleet/parent.ts --run
+ * Login parent for one Codr-Hub checkout, and the only process that fetches it. The server
+ * writes turn facts and reads the report; neither writes the other's file.
+ * Usage: `node scripts/codr-hub-fleet/parent.ts --arm | --run`.
  */
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -14,7 +11,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import {
   decide,
@@ -35,7 +32,7 @@ import {
 const TICK_MS = 15_000;
 const FETCH_FRESH_MS = 60_000;
 const RESTART_EXIT = 75;
-const platform = HostProcessPlatform.defaultValue();
+const platform = HostProcess.Platform.defaultValue();
 
 const scriptPath = NodeURL.fileURLToPath(import.meta.url);
 const repoRoot = NodePath.resolve(NodePath.dirname(scriptPath), "../..");

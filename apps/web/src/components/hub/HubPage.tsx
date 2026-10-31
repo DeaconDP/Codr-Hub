@@ -3,11 +3,10 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { useState } from "react";
 
 import { isElectron } from "../../env";
-import { useEscapeToGoBack } from "../../hooks/useNavigateBack";
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
-import { useRelativeTimeTick } from "../settings/settingsLayout";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -26,12 +25,13 @@ import { HubProjectsTable } from "./HubProjectsTable";
 import { HubTestQueue } from "./HubTestQueue";
 import { HubSettingsPanel } from "./HubSettingsPanel";
 import { HubStrategyPanel } from "./HubStrategyPanel";
+import { useEscapeToGoBack } from "./useEscapeToGoBack";
 import { useHubAction } from "./useHubAction";
 
 /** Codr-Hub: the portfolio, strategy, and autopilot. The table unions connected nodes. */
 export function HubPage() {
   useEscapeToGoBack();
-  useRelativeTimeTick(60_000);
+  useNowMinute(); // re-render relative times each minute
   const { environments } = useEnvironments();
   const primaryId = usePrimaryEnvironmentId();
   const connected = environments.filter(

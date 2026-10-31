@@ -23,7 +23,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-import { writeFileStringAtomically } from "../atomicWrite.ts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { ProcessRunner } from "../processRunner.ts";
 
 export const HubFile = Schema.Struct({
@@ -86,12 +86,11 @@ const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unkno
 
 const toJson = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
 
-const readJsonOr = <A>(file: string, fallback: A) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    if (!(yield* fs.exists(file))) return fallback as unknown;
-    return yield* decodeJson(yield* fs.readFileString(file));
-  });
+const readJsonOr = Effect.fn("codrHub.readJsonOr")(function* <A>(file: string, fallback: A) {
+  const fs = yield* FileSystem.FileSystem;
+  if (!(yield* fs.exists(file))) return fallback as unknown;
+  return yield* decodeJson(yield* fs.readFileString(file));
+});
 
 /**
  * A file that exists but cannot be decoded fails loudly instead of falling
@@ -128,8 +127,8 @@ export const readNodeFile = (paths: PortfolioPaths) =>
   );
 
 /** Undecodable project files are skipped with a warning and left untouched on disk. */
-export const readProjects = (paths: PortfolioPaths) =>
-  Effect.gen(function* () {
+export const readProjects = Effect.fn("codrHub.readProjects")(
+  function* (paths: PortfolioPaths) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     if (!(yield* fs.exists(paths.projectsDir))) return [];
@@ -155,7 +154,9 @@ export const readProjects = (paths: PortfolioPaths) =>
       ),
     );
     return projects.flat();
-  }).pipe(Effect.mapError(hubError("Could not read portfolio projects.")));
+  },
+  Effect.mapError(hubError("Could not read portfolio projects.")),
+);
 
 export const writeHubFile = (paths: PortfolioPaths, hub: HubFile) =>
   writeFileStringAtomically({ filePath: paths.hubFile, contents: toJson(hub) }).pipe(
@@ -167,23 +168,26 @@ export const writeNodeFile = (paths: PortfolioPaths, node: NodeFile) =>
     Effect.mapError(hubError("Could not save node settings.")),
   );
 
-export const projectFile = (path: Path.Path, paths: PortfolioPaths, id: string) =>
+const projectFile = (path: Path.Path, paths: PortfolioPaths, id: string) =>
   path.join(paths.projectsDir, `${id}.json`);
 
-export const writeProject = (paths: PortfolioPaths, project: HubProject) =>
-  Effect.gen(function* () {
+export const writeProject = Effect.fn("codrHub.writeProject")(
+  function* (paths: PortfolioPaths, project: HubProject) {
     const path = yield* Path.Path;
     yield* writeFileStringAtomically({
       filePath: projectFile(path, paths, project.id),
       contents: toJson(project),
     });
-  }).pipe(Effect.mapError(hubError(`Could not save project ${project.name}.`)));
+  },
+  (effect, _paths, project) =>
+    effect.pipe(Effect.mapError(hubError(`Could not save project ${project.name}.`))),
+);
 
-export const handoffFile = (path: Path.Path, paths: PortfolioPaths, id: string) =>
+const handoffFile = (path: Path.Path, paths: PortfolioPaths, id: string) =>
   path.join(paths.handoffsDir, `${id}.json`);
 
-export const readHandoffs = (paths: PortfolioPaths) =>
-  Effect.gen(function* () {
+export const readHandoffs = Effect.fn("codrHub.readHandoffs")(
+  function* (paths: PortfolioPaths) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     if (!(yield* fs.exists(paths.handoffsDir))) return [];
@@ -202,30 +206,39 @@ export const readHandoffs = (paths: PortfolioPaths) =>
       ),
     );
     return handoffs.flat();
-  }).pipe(Effect.mapError(hubError("Could not read test handoffs.")));
+  },
+  Effect.mapError(hubError("Could not read test handoffs.")),
+);
 
-export const writeHandoff = (paths: PortfolioPaths, handoff: TestHandoff) =>
-  Effect.gen(function* () {
+export const writeHandoff = Effect.fn("codrHub.writeHandoff")(
+  function* (paths: PortfolioPaths, handoff: TestHandoff) {
     const path = yield* Path.Path;
     yield* writeFileStringAtomically({
       filePath: handoffFile(path, paths, handoff.projectId),
       contents: toJson(handoff),
     });
-  }).pipe(Effect.mapError(hubError(`Could not save the test handoff for ${handoff.projectId}.`)));
+  },
+  (effect, _paths, handoff) =>
+    effect.pipe(
+      Effect.mapError(hubError(`Could not save the test handoff for ${handoff.projectId}.`)),
+    ),
+);
 
-export const removeHandoff = (paths: PortfolioPaths, id: string) =>
-  Effect.gen(function* () {
+export const removeHandoff = Effect.fn("codrHub.removeHandoff")(
+  function* (paths: PortfolioPaths, id: string) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const file = handoffFile(path, paths, id);
     if (yield* fs.exists(file)) yield* fs.remove(file);
-  }).pipe(Effect.mapError(hubError("Could not delete the test handoff.")));
+  },
+  Effect.mapError(hubError("Could not delete the test handoff.")),
+);
 
-export const taskFile = (path: Path.Path, paths: PortfolioPaths, id: string) =>
+const taskFile = (path: Path.Path, paths: PortfolioPaths, id: string) =>
   path.join(paths.tasksDir, `${id}.json`);
 
-export const readTasks = (paths: PortfolioPaths) =>
-  Effect.gen(function* () {
+export const readTasks = Effect.fn("codrHub.readTasks")(
+  function* (paths: PortfolioPaths) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     if (!(yield* fs.exists(paths.tasksDir))) return [];
@@ -244,55 +257,62 @@ export const readTasks = (paths: PortfolioPaths) =>
       ),
     );
     return tasks.flat();
-  }).pipe(Effect.mapError(hubError("Could not read portfolio tasks.")));
+  },
+  Effect.mapError(hubError("Could not read portfolio tasks.")),
+);
 
-export const writeTask = (paths: PortfolioPaths, task: HubTask) =>
-  Effect.gen(function* () {
+export const writeTask = Effect.fn("codrHub.writeTask")(
+  function* (paths: PortfolioPaths, task: HubTask) {
     const path = yield* Path.Path;
     yield* writeFileStringAtomically({
       filePath: taskFile(path, paths, task.id),
       contents: toJson(task),
     });
-  }).pipe(Effect.mapError(hubError(`Could not save task ${task.id}.`)));
+  },
+  (effect, _paths, task) =>
+    effect.pipe(Effect.mapError(hubError(`Could not save task ${task.id}.`))),
+);
 
-export const removeTask = (paths: PortfolioPaths, id: string) =>
-  Effect.gen(function* () {
+export const removeTask = Effect.fn("codrHub.removeTask")(
+  function* (paths: PortfolioPaths, id: string) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const file = taskFile(path, paths, id);
     if (yield* fs.exists(file)) yield* fs.remove(file);
-  }).pipe(Effect.mapError(hubError("Could not delete the task.")));
+  },
+  Effect.mapError(hubError("Could not delete the task.")),
+);
 
 /** Deletes every task file for a project. Call under writeLock with project delete. */
-export const removeTasksForProject = (paths: PortfolioPaths, projectId: string) =>
-  Effect.gen(function* () {
-    const tasks = yield* readTasks(paths);
-    yield* Effect.forEach(
-      tasks.filter((task) => task.projectId === projectId),
-      (task) => removeTask(paths, task.id),
-      { discard: true },
-    );
-  });
+export const removeTasksForProject = Effect.fn("codrHub.removeTasksForProject")(function* (
+  paths: PortfolioPaths,
+  projectId: string,
+) {
+  const tasks = yield* readTasks(paths);
+  yield* Effect.forEach(
+    tasks.filter((task) => task.projectId === projectId),
+    (task) => removeTask(paths, task.id),
+    { discard: true },
+  );
+});
 
-export const removeProject = (paths: PortfolioPaths, id: string) =>
-  Effect.gen(function* () {
+export const removeProject = Effect.fn("codrHub.removeProject")(
+  function* (paths: PortfolioPaths, id: string) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const file = projectFile(path, paths, id);
     if (yield* fs.exists(file)) yield* fs.remove(file);
-  }).pipe(Effect.mapError(hubError("Could not delete the project.")));
+  },
+  Effect.mapError(hubError("Could not delete the project.")),
+);
 
-// --- git ---------------------------------------------------------------------
-
-export const git = (
-  cwd: string,
-  args: ReadonlyArray<string>,
-  timeout: Duration.Input = "30 seconds",
-) =>
-  Effect.gen(function* () {
+export const git = Effect.fn("codrHub.git")(
+  function* (cwd: string, args: ReadonlyArray<string>, timeout: Duration.Input = "30 seconds") {
     const runner = yield* ProcessRunner;
     return yield* runner.run({ command: "git", args, cwd, timeout });
-  }).pipe(Effect.mapError(hubError(`git ${args[0]} failed.`)));
+  },
+  (effect, _cwd, args) => effect.pipe(Effect.mapError(hubError(`git ${args[0]} failed.`))),
+);
 
 const firstLine = (text: string) => text.trim().split("\n")[0] ?? "";
 
@@ -335,8 +355,8 @@ export const ensurePortfolioIdle = Effect.fnUntraced(
 );
 
 /** Creates the portfolio repo on first run. Commits need an identity, so a missing one gets a local fallback. */
-export const ensurePortfolioRepo = (paths: PortfolioPaths) =>
-  Effect.gen(function* () {
+export const ensurePortfolioRepo = Effect.fn("codrHub.ensurePortfolioRepo")(
+  function* (paths: PortfolioPaths) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     yield* fs.makeDirectory(paths.projectsDir, { recursive: true });
@@ -350,17 +370,21 @@ export const ensurePortfolioRepo = (paths: PortfolioPaths) =>
       yield* gitOk(paths.portfolioDir, ["config", "user.name", "Codr-Hub"]);
       yield* gitOk(paths.portfolioDir, ["config", "user.email", "codr-hub@localhost"]);
     }
-  }).pipe(Effect.mapError(hubError("Could not prepare the portfolio repo.")));
+  },
+  Effect.mapError(hubError("Could not prepare the portfolio repo.")),
+);
 
 /** Commits everything; an empty commit is not an error. */
-export const commitPortfolio = (paths: PortfolioPaths, message: string) =>
-  Effect.gen(function* () {
-    yield* ensurePortfolioIdle(paths);
-    yield* gitOk(paths.portfolioDir, ["add", "-A"]);
-    const status = yield* gitOk(paths.portfolioDir, ["status", "--porcelain"]);
-    if (status.trim() === "") return;
-    yield* gitOk(paths.portfolioDir, ["commit", "--quiet", "-m", message]);
-  });
+export const commitPortfolio = Effect.fn("codrHub.commitPortfolio")(function* (
+  paths: PortfolioPaths,
+  message: string,
+) {
+  yield* ensurePortfolioIdle(paths);
+  yield* gitOk(paths.portfolioDir, ["add", "-A"]);
+  const status = yield* gitOk(paths.portfolioDir, ["status", "--porcelain"]);
+  if (status.trim() === "") return;
+  yield* gitOk(paths.portfolioDir, ["commit", "--quiet", "-m", message]);
+});
 
 export const readRemote = (paths: PortfolioPaths) =>
   git(paths.portfolioDir, ["remote", "get-url", "origin"]).pipe(
@@ -368,90 +392,86 @@ export const readRemote = (paths: PortfolioPaths) =>
     Effect.orElseSucceed(() => null),
   );
 
-export const setRemote = (paths: PortfolioPaths, remote: string | null) =>
-  Effect.gen(function* () {
-    const current = yield* readRemote(paths);
-    if (remote === null) {
-      if (current !== null) yield* gitOk(paths.portfolioDir, ["remote", "remove", "origin"]);
-      return;
-    }
-    yield* gitOk(
-      paths.portfolioDir,
-      current === null
-        ? ["remote", "add", "origin", remote]
-        : ["remote", "set-url", "origin", remote],
-    );
-  });
+export const setRemote = Effect.fn("codrHub.setRemote")(function* (
+  paths: PortfolioPaths,
+  remote: string | null,
+) {
+  const current = yield* readRemote(paths);
+  if (remote === null) {
+    if (current !== null) yield* gitOk(paths.portfolioDir, ["remote", "remove", "origin"]);
+    return;
+  }
+  yield* gitOk(
+    paths.portfolioDir,
+    current === null
+      ? ["remote", "add", "origin", remote]
+      : ["remote", "set-url", "origin", remote],
+  );
+});
 
 /**
  * Pull (rebase) then push, retrying a competing push at most twice. Conflicts
  * restore our pre-sync branch; neither node's edits are resolved automatically.
  */
-export const syncPortfolio = (paths: PortfolioPaths) =>
-  Effect.gen(function* () {
-    yield* ensurePortfolioIdle(paths);
-    const status = yield* gitOk(paths.portfolioDir, ["status", "--porcelain"]);
-    if (status.trim() !== "") {
-      return yield* new HubError({
-        message: `Portfolio has uncommitted edits; commit or restore them in ${paths.portfolioDir} before syncing.`,
-      });
-    }
-    // symbolic-ref also works before the first commit, when a node joins empty.
-    const branch = (yield* gitOk(paths.portfolioDir, ["symbolic-ref", "--short", "HEAD"])).trim();
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      yield* gitOk(paths.portfolioDir, ["fetch", "--quiet", "origin"]);
-      const remoteHas = yield* git(paths.portfolioDir, [
-        "rev-parse",
-        "--verify",
+export const syncPortfolio = Effect.fn("codrHub.syncPortfolio")(function* (paths: PortfolioPaths) {
+  yield* ensurePortfolioIdle(paths);
+  const status = yield* gitOk(paths.portfolioDir, ["status", "--porcelain"]);
+  if (status.trim() !== "") {
+    return yield* new HubError({
+      message: `Portfolio has uncommitted edits; commit or restore them in ${paths.portfolioDir} before syncing.`,
+    });
+  }
+  // symbolic-ref also works before the first commit, when a node joins empty.
+  const branch = (yield* gitOk(paths.portfolioDir, ["symbolic-ref", "--short", "HEAD"])).trim();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    yield* gitOk(paths.portfolioDir, ["fetch", "--quiet", "origin"]);
+    const remoteHas = yield* git(paths.portfolioDir, [
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `origin/${branch}`,
+    ]);
+    if (remoteHas.code === 0) {
+      const pulled = yield* git(paths.portfolioDir, [
+        "pull",
+        "--rebase",
+        "--no-autostash",
         "--quiet",
-        `origin/${branch}`,
-      ]);
-      if (remoteHas.code === 0) {
-        const pulled = yield* git(paths.portfolioDir, [
-          "pull",
-          "--rebase",
-          "--no-autostash",
-          "--quiet",
-          "origin",
-          branch,
-        ]);
-        if (pulled.code !== 0) {
-          yield* git(paths.portfolioDir, ["rebase", "--abort"]);
-          return yield* new HubError({
-            message: `Portfolio sync conflict; local commits are retained. Resolve it in ${paths.portfolioDir}. ${firstLine(pulled.stderr)}`,
-          });
-        }
-      }
-      const hasCommits = yield* git(paths.portfolioDir, [
-        "rev-parse",
-        "--verify",
-        "--quiet",
-        "HEAD",
-      ]);
-      if (hasCommits.code !== 0) return;
-      const pushed = yield* git(paths.portfolioDir, [
-        "push",
-        "--porcelain",
-        "--quiet",
-        "-u",
         "origin",
         branch,
       ]);
-      if (pushed.code === 0) return;
-      const competingPush = pushed.stdout
-        .split("\n")
-        .some(
-          (line) =>
-            line.startsWith("!\t") && /\[rejected\] \((fetch first|non-fast-forward)\)/.test(line),
-        );
-      if (!competingPush) {
+      if (pulled.code !== 0) {
+        yield* git(paths.portfolioDir, ["rebase", "--abort"]);
         return yield* new HubError({
-          message: `Portfolio push failed; local commits are retained. ${firstLine(pushed.stderr) || `exit ${pushed.code}`}`,
+          message: `Portfolio sync conflict; local commits are retained. Resolve it in ${paths.portfolioDir}. ${firstLine(pulled.stderr)}`,
         });
       }
     }
-    return yield* new HubError({
-      message:
-        "Another node kept updating the portfolio. Local commits are retained; try syncing again.",
-    });
+    const hasCommits = yield* git(paths.portfolioDir, ["rev-parse", "--verify", "--quiet", "HEAD"]);
+    if (hasCommits.code !== 0) return;
+    const pushed = yield* git(paths.portfolioDir, [
+      "push",
+      "--porcelain",
+      "--quiet",
+      "-u",
+      "origin",
+      branch,
+    ]);
+    if (pushed.code === 0) return;
+    const competingPush = pushed.stdout
+      .split("\n")
+      .some(
+        (line) =>
+          line.startsWith("!\t") && /\[rejected\] \((fetch first|non-fast-forward)\)/.test(line),
+      );
+    if (!competingPush) {
+      return yield* new HubError({
+        message: `Portfolio push failed; local commits are retained. ${firstLine(pushed.stderr) || `exit ${pushed.code}`}`,
+      });
+    }
+  }
+  return yield* new HubError({
+    message:
+      "Another node kept updating the portfolio. Local commits are retained; try syncing again.",
   });
+});

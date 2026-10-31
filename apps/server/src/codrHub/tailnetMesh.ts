@@ -4,7 +4,7 @@ import {
   type EnvironmentId,
 } from "@t3tools/contracts";
 import { deriveWsBaseUrl, normalizeHttpBaseUrl } from "@t3tools/shared/advertisedEndpoint";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isTailscaleIpv4Address } from "@t3tools/tailscale";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -18,9 +18,9 @@ import {
   HttpClientRequest,
   HttpServerRequest,
   HttpServerResponse,
-} from "effect/unstable/http";
-import * as Cookies from "effect/unstable/http/Cookies";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+} from "effect/http";
+import * as Cookies from "effect/http/Cookies";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as SessionStore from "../auth/SessionStore.ts";
@@ -189,7 +189,7 @@ function splitHostPort(value: string): { readonly host: string; readonly port: n
 }
 
 /** HTTPS origins from `tailscale serve status --json` for this machine's MagicDNS name. */
-export function serveOrigins(value: unknown, selfDns: MagicDnsName): readonly string[] {
+function serveOrigins(value: unknown, selfDns: MagicDnsName): readonly string[] {
   if (!isRecord(value) || !isRecord(value.Web)) return [];
   const tcp = isRecord(value.TCP) ? value.TCP : {};
   const origins: string[] = [];
@@ -291,10 +291,10 @@ const tailscaleExecutable = (platform: NodeJS.Platform) =>
   platform === "win32" ? "tailscale.exe" : "tailscale";
 
 /** Stdout, or null when the CLI is missing, logged out, timed out, or exits nonzero. Stderr is drained and dropped. */
-const tailscaleStdout = (args: readonly string[], timeout: Duration.Duration) =>
-  Effect.gen(function* () {
+const tailscaleStdout = Effect.fn("codrHub.tailscaleStdout")(
+  function* (args: readonly string[], timeout: Duration.Duration) {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const platform = yield* HostProcessPlatform;
+    const platform = yield* HostProcess.Platform;
     const executable = tailscaleExecutable(platform);
     return yield* Effect.gen(function* () {
       const child = yield* spawner
@@ -318,21 +318,24 @@ const tailscaleStdout = (args: readonly string[], timeout: Duration.Duration) =>
       Effect.mapError(() => "absent" as const),
       Effect.orElseSucceed(() => null),
     );
-  }).pipe(Effect.catchDefect(() => Effect.succeed(null)));
+  },
+  Effect.catchDefect(() => Effect.succeed(null)),
+);
 
 const noRedirect = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }));
 
-const readHttpText = (request: HttpClientRequest.HttpClientRequest) =>
-  Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient;
-    const response = yield* noRedirect(client.execute(request)).pipe(
-      Effect.timeoutOption(HTTP_TIMEOUT),
-      Effect.orElseSucceed(() => Option.none()),
-    );
-    if (Option.isNone(response) || response.value.status !== 200) return null;
-    return yield* response.value.text.pipe(Effect.orElseSucceed(() => null));
-  });
+const readHttpText = Effect.fn("codrHub.readHttpText")(function* (
+  request: HttpClientRequest.HttpClientRequest,
+) {
+  const client = yield* HttpClient.HttpClient;
+  const response = yield* noRedirect(client.execute(request)).pipe(
+    Effect.timeoutOption(HTTP_TIMEOUT),
+    Effect.orElseSucceed(() => Option.none()),
+  );
+  if (Option.isNone(response) || response.value.status !== 200) return null;
+  return yield* response.value.text.pipe(Effect.orElseSucceed(() => null));
+});
 
 const mintAccessToken = Effect.fn("codrHub.tailnetMesh.mint")(function* (peer: TailnetPeer) {
   const cached = sessions.get(peer.nodeId);
@@ -472,4 +475,4 @@ export const linkTailnet = Effect.fn("codrHub.tailnetMesh.link")(function* () {
     concurrency: 4,
   });
   return { links: groups.flat() };
-});
+}, Effect.provide(FetchHttpClient.layer));

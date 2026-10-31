@@ -1,4 +1,5 @@
 /** Subscription pacing owners live on separate git refs, outside portfolio history. */
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Ref names need a deterministic digest, not random bytes.
 import * as NodeCrypto from "node:crypto";
 
 import { HubError, TrimmedNonEmptyString, type ServerProvider } from "@t3tools/contracts";
@@ -48,7 +49,7 @@ export const nodeIdentity = Effect.fnUntraced(
         directory: paths.root,
         prefix: ".quota-node-id-",
       });
-      yield* fs.writeFileString(temporary, `${yield* crypto.randomUUIDv4}\n`);
+      yield* fs.writeFileString(temporary, `${yield* crypto.randomUUIDv4()}\n`);
       yield* fs.link(temporary, file).pipe(
         Effect.catchIf(
           (cause) => cause.reason._tag === "AlreadyExists",

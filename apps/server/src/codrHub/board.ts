@@ -7,7 +7,6 @@
  */
 import {
   DEEZ_COLUMN_TO_HUB,
-  HUB_BOARD_COLUMNS,
   projectBoard,
   type DeezKanbanColumn,
   type HubBoardColumn,
@@ -17,7 +16,7 @@ import {
   type HubTaskRank,
 } from "@t3tools/contracts";
 
-export { projectBoard, HUB_BOARD_COLUMNS, DEEZ_COLUMN_TO_HUB };
+export { projectBoard };
 
 export type HubBoardTouched =
   | { readonly op: "write"; readonly task: HubTask }

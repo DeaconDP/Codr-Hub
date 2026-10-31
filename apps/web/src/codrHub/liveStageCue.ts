@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 
@@ -44,7 +44,7 @@ function motionAllowed() {
   return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function playLiveStageCue(element: Element, cue: LiveStageCue) {
+function playLiveStageCue(element: Element, cue: LiveStageCue) {
   if (!element.isConnected || typeof element.animate !== "function" || !motionAllowed()) return;
   element.animate(CUE_KEYFRAMES[cue], CUE_TIMING[cue]);
 }
@@ -58,6 +58,7 @@ export function useLiveStageCueRef<T extends HTMLElement>(active: boolean, faile
   const previousRef = useRef<LiveStage | null>(null);
   const live = active && !failed;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- plays a one-shot Web Animation on the row element when its stage changes.
   useLayoutEffect(() => {
     const next = { active, failed };
     const cue = liveStageCue(previousRef.current, next);
@@ -65,16 +66,13 @@ export function useLiveStageCueRef<T extends HTMLElement>(active: boolean, faile
     if (cue !== null && elementRef.current !== null) playLiveStageCue(elementRef.current, cue);
   }, [active, failed]);
 
-  return useCallback(
-    (element: T | null) => {
-      elementRef.current = element;
-      if (element === null || !live) return undefined;
-      const stop = observeVisibleAnimation(element);
-      return () => {
-        stop?.();
-        if (elementRef.current === element) elementRef.current = null;
-      };
-    },
-    [live],
-  );
+  return (element: T | null) => {
+    elementRef.current = element;
+    if (element === null || !live) return undefined;
+    const stop = observeVisibleAnimation(element);
+    return () => {
+      stop?.();
+      if (elementRef.current === element) elementRef.current = null;
+    };
+  };
 }

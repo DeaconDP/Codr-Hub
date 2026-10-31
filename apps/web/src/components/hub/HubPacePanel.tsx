@@ -2,10 +2,9 @@ import type { EnvironmentId, HubPace } from "@t3tools/contracts";
 import { useState } from "react";
 
 import { serverEnvironment } from "../../state/server";
-import { formatRelativeTimeUntilLabel } from "../../timestampFormat";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
-import { PACE_STATE } from "./hubFormat";
+import { formatTimeUntilLabel, PACE_STATE } from "./hubFormat";
 import { useHubAction } from "./useHubAction";
 
 export function HubPacePanel(props: {
@@ -66,7 +65,7 @@ function paceSummary(pace: HubPace) {
     pace.state === "behind" && pace.targetPercent !== null
       ? ` of ${Math.round(pace.targetPercent)}%`
       : "";
-  const reset = pace.resetsAt ? ` · resets ${formatRelativeTimeUntilLabel(pace.resetsAt)}` : "";
+  const reset = pace.resetsAt ? ` · resets ${formatTimeUntilLabel(pace.resetsAt)}` : "";
   return `${used}${target} · ${state}${reset}`;
 }
 
@@ -111,7 +110,7 @@ function BankedResets({ environmentId, pace }: { environmentId: EnvironmentId; p
       <span className="min-w-0 flex-1 text-sm text-muted-foreground">
         {pace.bankedResets} banked reset{pace.bankedResets === 1 ? "" : "s"}
         {pace.bankedResetExpiresAt
-          ? ` · expires ${formatRelativeTimeUntilLabel(pace.bankedResetExpiresAt)}`
+          ? ` · expires ${formatTimeUntilLabel(pace.bankedResetExpiresAt)}`
           : ""}
       </span>
       {confirming ? (

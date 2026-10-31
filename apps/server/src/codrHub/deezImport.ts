@@ -1,13 +1,7 @@
 /**
- * Maps Deez-Project-Manager's `projects.json` onto hub projects and tasks.
- * Pure and tolerant: Deez-PM's file has grown fields over time, so every field
- * is read defensively and unknown values fall back to safe defaults.
- *
- * Re-importing never overwrites what the owner has edited in the hub; it only
- * adds missing projects and fills this node's checkout path and repo URL.
- * Tasks skip any card whose deezCardId is already present.
- *
- * @module codrHub/deezImport
+ * Maps Deez-Project-Manager's `projects.json` onto hub projects and tasks, reading every field
+ * defensively. Re-importing only adds missing projects and cards and fills this node's path and
+ * repo URL; it never overwrites hub edits.
  */
 import type {
   HubPriority,

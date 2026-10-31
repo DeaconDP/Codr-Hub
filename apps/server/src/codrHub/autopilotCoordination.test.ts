@@ -27,9 +27,9 @@ import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
-import type { ProviderInstance } from "../provider/ProviderDriver.ts";
-import * as ProviderInstances from "../provider/Services/ProviderInstanceRegistry.ts";
-import * as Providers from "../provider/Services/ProviderRegistry.ts";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
+import * as ProviderInstances from "../provider/ProviderInstanceRegistry.ts";
+import * as Providers from "../provider/ProviderRegistry.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Hub from "./CodrHubService.ts";
 import * as Store from "./portfolioStore.ts";
@@ -129,6 +129,7 @@ const nodeHarness = (baseDir: string, initialProviders: ReadonlyArray<ServerProv
       generatePrContent: unused,
       generateBranchName: unused,
       generateThreadTitle: unused,
+      generateReviewGuide: unused,
     },
     consumeResetCredit: () =>
       Effect.sync(() => {

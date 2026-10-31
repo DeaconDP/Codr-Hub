@@ -27,10 +27,9 @@ import {
 } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
 import { MoreHorizontalIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { isElectron } from "../../env";
-import { useEscapeToGoBack } from "../../hooks/useNavigateBack";
 import { cn, randomUUID } from "../../lib/utils";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
@@ -52,6 +51,7 @@ import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { isSamePlacement, moveNeighbors } from "./hubBoardMove";
 import { PRIORITY_OPTIONS } from "./hubFormat";
+import { useEscapeToGoBack } from "./useEscapeToGoBack";
 import { useHubAction } from "./useHubAction";
 
 const COLUMN_LABEL: Record<HubBoardColumn, string> = {
@@ -109,10 +109,7 @@ export function HubBoardPage(props: { readonly projectId: string }) {
   const [draftTitle, setDraftTitle] = useState("");
   const [editing, setEditing] = useState<HubTask | null>(null);
 
-  const projected = useMemo(
-    () => (board.data ? projectBoard(board.data.tasks) : null),
-    [board.data],
-  );
+  const projected = board.data ? projectBoard(board.data.tasks) : null;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -334,12 +331,12 @@ function BoardColumn(props: {
   readonly onEdit: (task: HubTask) => void;
   readonly onDelete: (taskId: string) => void;
 }) {
-  const droppable = useDroppable({ id: columnDropId(props.column) });
+  const { setNodeRef } = useDroppable({ id: columnDropId(props.column) });
   const itemIds = props.tasks.map((task) => task.id);
 
   return (
     <section
-      ref={droppable.setNodeRef}
+      ref={setNodeRef}
       aria-labelledby={`hub-col-${props.column}`}
       className={cn("flex min-w-0 flex-col gap-2 rounded-md p-1", props.className)}
     >

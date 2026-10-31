@@ -66,6 +66,7 @@ Done when agent work feels alive on chat and Hub, idle surfaces stay still, and 
 
 ## Deferred
 
+- 2026-10-31: Upstream sync kept Codr-Hub names only where the fork had already rebranded a line. Strings upstream added since then (mobile toolbars, outdated-server notice, macOS usage descriptions) still say "T3 Code"; sweep them in one pass rather than per merge. `scripts/build-desktop-artifact.ts:2829`
 - 2026-10-27: Machine monitor deferred behind site fleet; Ada metrics overlap E5 Fuel Gauge and are host-scoped, not portfolio cards. `ROADMAP.md` E3
 - 2026-10-05: Claude banked resets aren't read on macOS because T3 skips the Keychain. Fuel Gauge reads it via `/usr/bin/security`; porting that touches credential handling and needs a security review. `apps/server/src/provider/Layers/claudeResetCredits.ts:153`
 - 2026-10-05: Automatic takeover of an offline pacing owner deferred; a timeout could let its paused threads resume alongside a new owner. Recover the owning node and drain it before handover. `apps/server/src/codrHub/quotaOwnership.ts:158`

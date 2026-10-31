@@ -1,11 +1,6 @@
 /**
- * Codr-Hub: the portfolio and autopilot layer this fork adds on top of T3
- * Code. See docs/codr-hub/ARCHITECTURE.md.
- *
- * Portfolio records are stored as files in a git repo shared by every mesh
- * node, so they are keyed by stable string ids rather than T3 entity ids.
- *
- * @module codrHub
+ * Codr-Hub portfolio and autopilot contracts. Records live as files in a git repo shared by
+ * every mesh node, so they use stable string ids, not T3 entity ids.
  */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -114,8 +109,6 @@ export const HubStrategyPriority = Schema.Struct({
 });
 export type HubStrategyPriority = typeof HubStrategyPriority.Type;
 
-// --- derived helpers shared by server and clients -----------------------------
-
 const HUB_PRIORITY_WEIGHT: Record<HubPriority, number> = {
   critical: 4,
   high: 3,
@@ -163,7 +156,7 @@ export const HubPaceTargets = Schema.Struct({
 });
 export type HubPaceTargets = typeof HubPaceTargets.Type;
 
-export const DEFAULT_HUB_PACE_TARGETS: HubPaceTargets = {
+const DEFAULT_HUB_PACE_TARGETS: HubPaceTargets = {
   claudeAgent: 95,
   cursor: 95,
   codex: 95,
@@ -348,11 +341,9 @@ function preferHandoff(
 }
 
 /**
- * Union by `project.id`. Overlay path/git/running/pathExists per `snapshot.nodeName`.
- * Shared `HubProject` is one record; if clones disagree, pick latest `updatedAt`
- * (ties keep the first snapshot's record). Later snapshots overwrite the same
- * nodeName. Autopilot eligibility is still this-node: do not treat another
- * host's checkout as making the selected environment eligible.
+ * Union by `project.id`, overlaying per-node checkout state. Disagreeing clones keep the latest
+ * `updatedAt` (ties keep the first). Eligibility stays this-node: another host's checkout never
+ * makes the selected environment eligible.
  */
 export function mergeHubProjectViews(
   snapshots: ReadonlyArray<HubSnapshot>,
@@ -545,6 +536,17 @@ export const TailnetLinkScopes = Schema.Tuple([
   scopeLiteral(AuthStandardClientScopes[2]),
   scopeLiteral(AuthStandardClientScopes[3]),
   scopeLiteral(AuthStandardClientScopes[4]),
+  scopeLiteral(AuthStandardClientScopes[5]),
+  scopeLiteral(AuthStandardClientScopes[6]),
+  scopeLiteral(AuthStandardClientScopes[7]),
+  scopeLiteral(AuthStandardClientScopes[8]),
+  scopeLiteral(AuthStandardClientScopes[9]),
+  scopeLiteral(AuthStandardClientScopes[10]),
+  scopeLiteral(AuthStandardClientScopes[11]),
+  scopeLiteral(AuthStandardClientScopes[12]),
+  scopeLiteral(AuthStandardClientScopes[13]),
+  scopeLiteral(AuthStandardClientScopes[14]),
+  scopeLiteral(AuthStandardClientScopes[15]),
 ]);
 export type TailnetLinkScopes = typeof TailnetLinkScopes.Type;
 

@@ -11,33 +11,33 @@ Upstream T3 Code lands about 40 commits a day. Every line we change in an upstre
 3. Every upstream file we touch is listed below. If you add a seam, add it here; if you remove one, delete it here.
 4. No SQLite migrations. Portfolio data lives in files (see [Data](#data)), so T3's migration numbering is never contested.
 
-| Upstream file                                          | Hook                                                                                    |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `packages/contracts/src/index.ts`                      | `export * from "./codrHub.ts"` and `./codrHubBoard.ts`                                  |
-| `packages/contracts/src/rpc.ts`                        | `WS_METHODS` hub entries, plus one block of `Rpc.make` definitions added to the group   |
-| `apps/server/src/ws.ts`                                | Hub handlers block                                                                      |
-| `apps/server/src/auth/RpcAuthorization.ts`             | Scope per hub method                                                                    |
-| `apps/server/src/orchestration-v2/runtimeLayer.ts`     | Provides `CodrHubService`                                                               |
-| `packages/client-runtime/src/rpc/client.ts`            | Hub subscription tag                                                                    |
-| `packages/client-runtime/src/state/server.ts`          | Hub atoms                                                                               |
-| `apps/web/src/components/sidebar/SidebarChrome.tsx`    | "Hub" utility item                                                                      |
-| `apps/web/src/components/sidebar/mainAppLocation.ts`   | `/hub` counts as a utility page                                                         |
-| `apps/web/src/routeTree.gen.ts`                        | Generated; regenerates on build                                                         |
-| `AGENTS.md`                                            | Codr-Hub section at the end                                                             |
-| `README.md`                                            | One-click `run.command` / `run.bat` note after `vp i`                                   |
-| `docs/operations/development.md`                       | One-click launcher paragraph (sticky 5733 / 13773)                                      |
-| `apps/mobile/app.config.ts`                            | `T3CODE_IOS_APPLE_TEAM_ID` plus existing personal-team bundle/capability path           |
-| `apps/web/src/components/chat/MessagesTimeline.tsx`    | `LiveActivityRow` ref uses `useLiveStageCueRef` (E9 stage cues, `apps/web/src/codrHub`) |
-| `apps/server/src/http.ts`                              | Tailnet mesh well-known routes                                                          |
-| `apps/server/src/server.ts`                            | Mesh route layer                                                                        |
-| `apps/web/src/environments/primary/auth.ts`            | Tailnet join before the pairing gate                                                    |
-| `apps/web/src/connection/runtime.ts`                   | `linkTailnetMeshLayer`                                                                  |
-| `apps/mobile/src/connection/runtime.ts`                | `linkTailnetMeshLayer`                                                                  |
-| `packages/client-runtime/src/connection/onboarding.ts` | export `bearerConnectionId`                                                             |
-| `packages/client-runtime/package.json`                 | `./codrHub/linkTailnetMesh` export                                                      |
-| `apps/web/src/authBootstrap.test.ts`                   | Tailnet join test                                                                       |
-| `pnpm-workspace.yaml`                                  | `patchedDependencies` entry for `expo-modules-jsi@58.0.7` (Swift 6.4 patch)             |
-| `pnpm-lock.yaml`                                       | Regenerated for the `expo-modules-jsi` patch hash                                       |
+| Upstream file                                            | Hook                                                                                    |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `packages/contracts/src/index.ts`                        | `export * from "./codrHub.ts"` and `./codrHubBoard.ts`                                  |
+| `packages/contracts/src/rpc.ts`                          | `WS_METHODS` hub entries, plus one block of `Rpc.make` definitions added to the group   |
+| `apps/server/src/ws.ts`                                  | Hub handlers block                                                                      |
+| `apps/server/src/ws.test.ts`                             | `CodrHubService` mock in the two config-boundary test layers                            |
+| `apps/server/src/auth/RpcAuthorization.ts`               | Scope per hub method                                                                    |
+| `apps/server/src/observability/RpcInstrumentation.ts`    | `codrHub` span aggregate per hub method                                                 |
+| `apps/server/src/orchestration-v2/runtimeLayer.ts`       | Provides `CodrHubService`                                                               |
+| `packages/client-runtime/src/rpc/client.ts`              | Hub subscription tag                                                                    |
+| `packages/client-runtime/src/state/server.ts`            | Hub atoms                                                                               |
+| `apps/web/src/components/sidebar/SidebarChrome.tsx`      | "Hub" utility item                                                                      |
+| `apps/web/src/components/sidebar/mainAppLocation.ts`     | `/hub` counts as a utility page                                                         |
+| `apps/web/src/routeTree.gen.ts`                          | Generated; regenerates on build                                                         |
+| `AGENTS.md`                                              | Codr-Hub section at the end                                                             |
+| `README.md`                                              | One-click `run.command` / `run.bat` note after `vp i`                                   |
+| `docs/operations/development.md`                         | One-click launcher paragraph (sticky 5733 / 13773)                                      |
+| `apps/mobile/app.config.ts`                              | `T3CODE_IOS_APPLE_TEAM_ID` plus existing personal-team bundle/capability path           |
+| `apps/web/src/components/chat/TimelineWorkGroupRows.tsx` | `LiveActivityRow` ref uses `useLiveStageCueRef` (E9 stage cues, `apps/web/src/codrHub`) |
+| `apps/server/src/http.ts`                                | Tailnet mesh well-known routes (`layerTailnetMeshRoute`)                                |
+| `apps/server/src/server.ts`                              | Mesh route layer                                                                        |
+| `apps/web/src/environments/primary/auth.ts`              | Tailnet join before the pairing gate                                                    |
+| `apps/web/src/connection/runtime.ts`                     | `linkTailnetMeshLayer`                                                                  |
+| `apps/mobile/src/connection/runtime.ts`                  | `linkTailnetMeshLayer`                                                                  |
+| `packages/client-runtime/src/connection/onboarding.ts`   | export `bearerConnectionId`                                                             |
+| `packages/client-runtime/package.json`                   | `./codrHub/linkTailnetMesh` export                                                      |
+| `apps/web/src/authBootstrap.test.ts`                     | Tailnet join test                                                                       |
 
 ### Syncing upstream
 

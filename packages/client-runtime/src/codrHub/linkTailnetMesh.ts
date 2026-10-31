@@ -135,7 +135,7 @@ const linkOnce = Effect.fn("codrHub.linkTailnetMesh.once")(function* () {
   }
 });
 
-export const linkTailnetMesh = Effect.fn("codrHub.linkTailnetMesh")(function* () {
+const linkTailnetMesh = Effect.fn("codrHub.linkTailnetMesh")(function* () {
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
   const introducerId = yield* SubscriptionRef.changes(registry.entries).pipe(
     Stream.switchMap((entries) => {

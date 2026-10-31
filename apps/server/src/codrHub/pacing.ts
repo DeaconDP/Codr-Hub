@@ -1,13 +1,6 @@
 /**
- * Quota pacing for the Codr-Hub autopilot. Pure: the service feeds it the
- * provider snapshots T3 already publishes and acts on the result.
- *
- * The longest window (usually weekly) is the budget being paced, because it
- * is the quota that is lost at reset. Shorter windows (the five-hour session)
- * only cap: once any window reaches the target, the provider waits for that
- * window to reset.
- *
- * @module codrHub/pacing
+ * Pure quota pacing for the autopilot. The longest window is the paced budget, since it is the
+ * quota lost at reset; shorter windows only cap, pausing the provider until they reset.
  */
 import type { HubPace, ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";

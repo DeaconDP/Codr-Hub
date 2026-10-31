@@ -1,16 +1,9 @@
 #!/usr/bin/env node
 
-// Renders the Android launcher and splash artwork from the Codr-Hub Icon Composer glyph.
-//
-// Icon Composer exports already contain a rounded-square silhouette, and Android masks
-// the central 72dp of a 108dp adaptive canvas, so exporting them as a foreground produces
-// a double-framed icon. Instead, each variant gets a charcoal full-bleed background and a
-// shared transparent foreground that keeps the chevron glyph inside the safe zone.
-//
-// The Android 12+ splash screen masks its icon to a circle covering the central two thirds
-// of a 288dp canvas, which is the same proportion the launcher crops. Composing the two
-// adaptive layers into one 288dp image therefore makes the splash frame the glyph
-// exactly like the launcher icon does.
+// Renders Android launcher and splash art from the Codr-Hub glyph. Android masks the central
+// 72dp of a 108dp canvas, so each variant gets a charcoal full-bleed background and a shared
+// transparent foreground with the glyph in the safe zone. The 288dp splash crops in the same
+// proportion, so composing both layers frames the glyph like the launcher icon.
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
