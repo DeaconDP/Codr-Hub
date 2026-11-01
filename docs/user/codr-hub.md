@@ -4,18 +4,50 @@ Codr-Hub adds a **Hub** page (sidebar → Hub) that ranks your projects, shows h
 
 ## Getting started
 
-1. Open **Hub** from the sidebar.
-2. Set **This node's name** in Hub settings, for example `Steve`. Each machine keeps its own checkout paths under its name.
-3. With no projects yet, click **Import** to bring in your existing list, or **Add project** to add one by hand. Imported projects start at **Off**.
-4. Tap a project to set its checkout, autonomy, strategy, priority, status, and stage. The list is ranked. A row names the project and, underneath, only what is worth noticing: an autonomy other than **Off**, a status other than **Active**, the strategy it serves (or a stage once it has left the first one), and the checkout on the machine selected at the top. **Path missing** or **No checkout** means the autopilot cannot work on it from that machine. **Finished** shows done and archived projects. Autopilot eligibility is only the environment you pick in the header.
+1. Install at least one agent CLI and sign in with your subscription: `claude auth login` (Claude), `codex login` (Codex), or `agent login` (Cursor). The autopilot never uses API keys.
+2. Double-click `run.command` (macOS, Linux) or `run.bat` (Windows) in your Codr-Hub folder. You need Node 24 (the launcher installs it through nvm if you have nvm). The first run installs everything else and opens a signed-in browser at http://localhost:5733. Run it again later to reopen the app.
+3. Open **Hub** from the sidebar.
+4. Check **This node's name** in Hub settings. It defaults to the machine's name; each machine keeps its own checkout paths under it.
+5. Click **Import from T3** to bring in this machine's T3 projects, **Import from Deez-PM** for your existing list, or **Add project**. To keep T3 and the Hub in step from then on, turn on **Sync with T3** in Hub settings. See [Importing from T3](#importing-from-t3).
+6. In Hub settings, set **Portfolio git remote** to a private repository and click **Save & sync**. Use the same remote on every machine. See [Sharing across machines](#sharing-across-machines).
+7. Optional: run `npm run codr:always-on` in your Codr-Hub folder to keep this machine's Hub running and updated. See [Always-on machines](#always-on-machines).
+8. Optional: use the Hub from your phone over Tailscale, or install the iPhone app. See [On your phone](#on-your-phone).
+
+Repeat steps 1 to 7 on each machine.
+
+## Projects
+
+Imported projects start at autonomy **Off**. Tap a project to set its checkout, autonomy, strategy, priority, status, and stage.
+
+The list is ranked. A row names the project and, underneath, only what is worth noticing: an autonomy other than **Off**, a status other than **Active**, the strategy it serves (or a stage once it has left the first one), and the checkout on the machine selected at the top. **Path missing** or **No checkout** means the autopilot cannot work on it from that machine. **Finished** shows done and archived projects. Autopilot eligibility is only the environment you pick in the header.
 
 Under a project's **Details**, set **Job kind** to Dev, Edit, Writing, or Image. This chooses the preferred agent and model: Claude for Dev, Cursor for Edit, and Codex for Writing and Image. Coding work can fall back to Codex when its allowance resets first and remains below its target. If no suitable model is available, the project waits.
 
 **Lane** groups projects into Immersion, Automation, or Publicity for filtering. Strategy and priority still determine their rank.
 
+## Importing from T3
+
+**Import from T3** brings in the projects that the selected machine has open in T3. A project that's already in the Hub, matched by its git remote or its name, gets this machine's checkout instead of being added twice. This also fixes a **Path missing** checkout when the project has moved. Your edits to Hub projects are never overwritten.
+
+To skip re-running the import, turn on **Sync with T3** in Hub settings. It is set per machine. While it is on, projects you add in T3 appear in the Hub right away, and Hub projects with a checkout on this machine are added to T3. Nothing is ever removed on either side, and a project you removed from T3 is not added back. The button becomes **Sync now**, and the line above the list shows when the last sync ran and what it changed.
+
+Turn it on, or run the import, on each machine from the selector at the top.
+
+## Choosing a project for a new thread
+
+The project menu on a new thread lists **Favourites** first, then your other projects in the order you arrange. Drag a row by its handle to move it, or highlight it and press Alt+↑/↓. Type to find a project by name or tag, or tap a tag to show only those projects.
+
+Each row has a star for favourites and a **⋯** menu to **Rename** the project or **Edit tags**. The coloured machine icons show where the project is checked out. Each machine gets a colour automatically; choose **Machine colours** to change one.
+
+Favourites, tags, and order are saved in the portfolio, so every device and machine sees the same list. Starring, tagging, or moving a project that isn't in the Hub yet adds it with autonomy **Off**, so the autopilot leaves it alone. Renaming changes the project's name everywhere it is checked out. These actions need a connected machine running Codr-Hub that has the project checked out.
+
 ## Project board
 
 Open **Board** on a project row (or `/hub/projects/<id>/board`) for that project's Todo / In progress / Ready for testing / Done cards. Import from Deez-PM also brings cards across, mapping its five columns onto these four. Ready-for-testing cards are planning notes; they are separate from **Needs you** test handoffs. Narrow screens show one column at a time.
+
+## Dashboard
+
+**Dashboard** in the Hub header maps every project as a tile, grouped by the machine it is checked out on and coloured by platform. A project checked out on two machines appears under both. **Importance** sizes tiles by priority, strategy, and favourites; **Activity** sizes them by commits on that machine over the window you pick (24h, 7d, 30d, YTD, or All), and dims projects with no commits in it. Tap a platform in the legend to hide or show it, hover a tile for its details, and click it to open the project's board.
 
 ## Ranking
 
@@ -65,8 +97,22 @@ Open Codr-Hub on a machine signed into your Tailscale account. The app signs you
 
 The project list merges live data from every connected T3 environment. Pace, Autopilot, Run once, and Import still apply to the environment selected at the top. One unreachable environment is omitted from the merge; it does not hide the others.
 
-## Fleet updates
+## On your phone
 
-On a machine with fleet updates enabled, Hub reports when an update is waiting, installing, or stuck. Updates wait for agent turns, approval waits, and background work to finish. If the server stops reporting activity, the update keeps waiting.
+To use the Hub from a phone browser, join the phone to the same tailnet and connect it as described in [Remote access](remote-access.md#tailscale-https).
+
+To install the iPhone app instead, plug in and unlock the iPhone, then run `npm run codr:phone` in your Codr-Hub folder on a Mac with Xcode.
+
+## Always-on machines
+
+Run `npm run codr:always-on` in your Codr-Hub folder to start the Hub at login and keep it updated from upstream. `npm run codr:always-off` turns this off and leaves the running Hub alone.
+
+Hub reports when an update is waiting, installing, or stuck. Updates wait for agent turns, approval waits, and background work to finish. If the server stops reporting activity, the update keeps waiting.
 
 Uncommitted work, local commits ahead of upstream, or a diverged branch prevent automatic updates. Resolve the reported checkout issue before updates can continue. Each machine updates its own Codr-Hub checkout.
+
+## Update from T3 Code
+
+**Update from T3 Code** under Hub settings brings in the latest T3 Code changes. **Check** shows how many commits behind T3 Code this machine's Codr-Hub folder is. **Merge & push** merges them and pushes the result to your Codr-Hub repository, and always-on machines pick it up once their agents are idle.
+
+It needs a Codr-Hub folder with an `upstream` remote pointing at T3 Code, no uncommitted changes, and the startup (admin) link rather than a phone or tailnet session. If the merge conflicts, nothing changes and the conflicting files are listed; merge those by hand with git.

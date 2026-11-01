@@ -233,6 +233,10 @@ const RPC_AGGREGATES = {
   [WS_METHODS.hubSync]: "codrHub",
   [WS_METHODS.hubRunAutopilot]: "codrHub",
   [WS_METHODS.hubLinkTailnet]: "codrHub",
+  [WS_METHODS.hubUpsertProjects]: "codrHub",
+  [WS_METHODS.hubInsights]: "codrHub",
+  [WS_METHODS.hubUpstreamStatus]: "codrHub",
+  [WS_METHODS.hubUpstreamMerge]: "codrHub",
 } as const satisfies Readonly<Record<WsRpcMethod, string>>;
 
 const RPC_SPAN_PREFIX = "ws.rpc";

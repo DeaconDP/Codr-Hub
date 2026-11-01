@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { isElectron } from "../../env";
@@ -91,6 +92,9 @@ export function HubPage() {
           </>
         ) : null}
       </WorkspaceBreadcrumb>
+      <Button size="xs" variant="ghost-muted" render={<Link to="/hub/dashboard" />}>
+        Dashboard
+      </Button>
       {environment && snapshot ? (
         <AutopilotSwitch
           environmentId={environment.environmentId}

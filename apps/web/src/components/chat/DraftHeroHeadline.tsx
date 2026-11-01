@@ -1,11 +1,10 @@
 import type { DraftId } from "~/composerDraftStore";
-import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDraftStore";
-import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
+import { useComposerDraftStore } from "~/composerDraftStore";
+import type { ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { FolderPlusIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { shortcutLabelForCommand } from "~/keybindings";
@@ -22,7 +21,6 @@ import {
 import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
-  projectGroupsSpanEnvironments,
 } from "~/sidebarProjectGrouping";
 import { useProjects, useThreadShells } from "~/state/entities";
 import {
@@ -30,19 +28,8 @@ import {
   usePrimaryEnvironmentId,
   useEnvironmentProviders,
 } from "~/state/environments";
-import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";
-import { ProjectFavicon } from "../ProjectFavicon";
+import { HubProjectPicker } from "../hub/HubProjectPicker";
 import { sortLogicalProjectsForSidebar } from "../Sidebar.logic";
-import {
-  Combobox,
-  ComboboxEmpty,
-  ComboboxItem,
-  ComboboxList,
-  ComboboxPopup,
-  ComboboxSearchInput,
-  ComboboxTrigger,
-  useComboboxFilter,
-} from "../ui/combobox";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { DraftProjectName } from "./DraftProjectName";
@@ -51,13 +38,6 @@ import { TriageDraftHero } from "./TriageDraftHero";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveProjectDefaultProviderModelSelection } from "../../providerInstances";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
-
-const ADD_PROJECT_VALUE = "add-project";
-
-interface PickerItem {
-  readonly value: string;
-  readonly label: string;
-}
 
 interface DraftHeroHeadlineProps {
   readonly draftId: DraftId | null;
@@ -91,9 +71,6 @@ export function DraftHeroHeadline({
   const { scratchEnvironmentId, scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
   const openProjectDraft = useNewThreadHandler();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerQuery, setPickerQuery] = useState("");
-  const pickerFilter = useComboboxFilter();
 
   const environmentLabelById = new Map(
     environments.map((environment) => [environment.environmentId, environment.label] as const),
@@ -108,23 +85,10 @@ export function DraftHeroHeadline({
     threads,
     projectSortOrder,
   );
-  const showProjectEnvironments = projectGroupsSpanEnvironments(projectGroups);
-  const environmentMachineById = new Map(
-    environments.map(
-      (environment) =>
-        [
-          environment.environmentId,
-          resolveEnvironmentMachineKind(environment.serverConfig),
-        ] as const,
-    ),
-  );
   const projectPickerEntries = buildSidebarProjectPickerEntries({
     groups: projectGroups,
     preferredProjectRef: activeProjectRef,
   });
-  const projectEntryByKey = new Map(
-    projectPickerEntries.map((entry) => [entry.group.projectKey, entry] as const),
-  );
   const activeProjectGroup =
     activeProjectRef === null
       ? null
@@ -155,21 +119,6 @@ export function DraftHeroHeadline({
   const isScratchDraft =
     activeProject !== null &&
     isScratchProject(activeProject, scratchWorkspaceRootFor(activeProject.environmentId));
-
-  const pickerItems: readonly PickerItem[] = [
-    ...menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
-    { value: ADD_PROJECT_VALUE, label: "Add project" },
-  ];
-  const pickerSearch = pickerQuery.trim();
-  const filteredPickerItems =
-    pickerSearch.length === 0
-      ? pickerItems
-      : pickerItems.filter(
-          (item) =>
-            item.value !== ADD_PROJECT_VALUE &&
-            pickerFilter.contains(item, pickerSearch, (candidate) => candidate.label),
-        );
-  const selectedPickerItem = pickerItems.find((item) => item.value === activeProjectKey) ?? null;
 
   // The picker can change the draft's target while the no-project home is
   // still being opened; a stale continuation must not retarget it again. Picking
@@ -250,89 +199,19 @@ export function DraftHeroHeadline({
     return true;
   };
 
+  // Codr-Hub: favourites, tags, manual order, rename and machine colours.
   const projectSelector = shouldShowProjectMenu ? (
-    <Combobox
-      items={pickerItems}
-      filteredItems={filteredPickerItems}
-      autoHighlight
-      itemToStringLabel={(item) => item.label}
-      isItemEqualToValue={(a, b) => a.value === b.value}
-      open={pickerOpen}
-      onOpenChange={(open) => {
-        setPickerOpen(open);
-        setPickerQuery("");
-      }}
-      value={selectedPickerItem}
-      onValueChange={(item) => {
-        if (!item) return;
-        setPickerOpen(false);
-        if (item.value === ADD_PROJECT_VALUE) {
-          openAddProject();
-          return;
-        }
-        const entry = projectEntryByKey.get(item.value);
-        if (!entry || item.value === activeProjectKey) {
-          return;
-        }
-        selectProject(entry.targetProject, entry.group.projectKey);
-      }}
-    >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <ComboboxTrigger
-              render={<InlineButton tone="picker" />}
-              data-draft-project-trigger=""
-              className="pointer-events-auto min-w-0 max-w-full align-baseline"
-            />
-          }
-        >
-          <DraftProjectName
-            value={isScratchDraft ? "No project" : (activeProjectDisplayName ?? "Choose a project")}
-            singleLine
-          />
-        </TooltipTrigger>
-        {activeProjectDisplayName && !isScratchDraft ? (
-          <TooltipPopup side="top">{activeProjectDisplayName}</TooltipPopup>
-        ) : null}
-      </Tooltip>
-      <ComboboxPopup align="center" className="w-72 overflow-hidden">
-        <ComboboxSearchInput
-          aria-label="Search projects"
-          placeholder="Search projects..."
-          value={pickerQuery}
-          onChange={(event) => setPickerQuery(event.target.value)}
-        />
-        <ComboboxEmpty>No matching projects.</ComboboxEmpty>
-        <ComboboxList>
-          {(item: PickerItem) => {
-            const entry = projectEntryByKey.get(item.value);
-            return (
-              <ComboboxItem key={item.value} hideIndicator value={item}>
-                {item.value === ADD_PROJECT_VALUE ? (
-                  <FolderPlusIcon className="size-4 shrink-0" />
-                ) : entry ? (
-                  <ProjectFavicon project={entry.group} className="size-4 shrink-0" />
-                ) : null}
-                <Tooltip>
-                  <TooltipTrigger render={<span className="min-w-0 flex-1 text-sm" />}>
-                    <DraftProjectName value={item.label} />
-                  </TooltipTrigger>
-                  <TooltipPopup side="top">{item.label}</TooltipPopup>
-                </Tooltip>
-                {entry && showProjectEnvironments ? (
-                  <ProjectEnvironmentBadge
-                    group={entry.group}
-                    primaryEnvironmentId={primaryEnvironmentId}
-                    machineByEnvironmentId={environmentMachineById}
-                  />
-                ) : null}
-              </ComboboxItem>
-            );
-          }}
-        </ComboboxList>
-      </ComboboxPopup>
-    </Combobox>
+    <HubProjectPicker
+      entries={menuEntries}
+      activeProjectKey={activeProjectKey}
+      noProjectActive={isScratchDraft}
+      triggerLabel={
+        isScratchDraft ? "No project" : (activeProjectDisplayName ?? "Choose a project")
+      }
+      onSelect={(entry) => selectProject(entry.targetProject, entry.group.projectKey)}
+      onNoProject={scratchWorkspaceRoot === null ? null : () => void startScratch()}
+      onAddProject={openAddProject}
+    />
   ) : (
     <button
       type="button"

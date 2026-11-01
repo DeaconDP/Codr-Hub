@@ -15,6 +15,7 @@ import { Label } from "../ui/label";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { HubUpstreamRow } from "./HubUpstreamRow";
 import { useHubAction } from "./useHubAction";
 
 export function HubSettingsPanel(props: {
@@ -35,6 +36,11 @@ export function HubSettingsPanel(props: {
     "Could not rename node",
   );
   const runSync = useHubAction(serverEnvironment.hubSync, environmentId, "Could not sync");
+  const setSyncT3 = useHubAction(
+    serverEnvironment.hubSetNode,
+    environmentId,
+    "Could not change Sync with T3",
+  );
   const [remote, setRemote] = useState(sync.remote ?? "");
 
   /** Commits a numeric field on blur when it is a valid, changed value. */
@@ -215,6 +221,21 @@ export function HubSettingsPanel(props: {
           </span>
         </span>
       </label>
+      <label className="flex items-start gap-2 text-sm">
+        <Switch
+          aria-label="Sync with T3"
+          checked={snapshot.t3Sync?.enabled ?? false}
+          disabled={setSyncT3.busy}
+          onCheckedChange={(checked) => void setSyncT3.run({ syncT3: checked })}
+        />
+        <span>
+          Sync with T3
+          <span className="block text-xs text-muted-foreground">
+            Keep this machine’s T3 projects in the Hub automatically, and add this machine’s Hub
+            checkouts to T3. Nothing is removed on either side.
+          </span>
+        </span>
+      </label>
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={`${id}-remote`}>Portfolio git remote</Label>
@@ -251,6 +272,8 @@ export function HubSettingsPanel(props: {
           )}
         </p>
       </div>
+
+      <HubUpstreamRow environmentId={environmentId} />
 
       <details className="rounded-lg border px-3 py-2">
         <summary className="cursor-pointer text-sm font-medium">Stage prompts</summary>

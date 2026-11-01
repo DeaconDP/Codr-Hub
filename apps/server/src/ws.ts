@@ -125,6 +125,7 @@ import * as CodrHub from "./codrHub/CodrHubService.ts";
 import { linkTailnet } from "./codrHub/tailnetMesh.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
+import { upstreamSync } from "./codrHub/upstreamSync.ts";
 import {
   bufferShellLiveStream,
   coalesceShellApplicationEvents,
@@ -2194,6 +2195,10 @@ export const layerWsRpc = (
         [WS_METHODS.hubSync]: (input) => codrHub.sync(input),
         [WS_METHODS.hubRunAutopilot]: (_input) => codrHub.runAutopilot(),
         [WS_METHODS.hubLinkTailnet]: (_input) => linkTailnet(),
+        [WS_METHODS.hubUpsertProjects]: (input) => codrHub.upsertProjects(input),
+        [WS_METHODS.hubInsights]: (_input) => codrHub.insights(),
+        [WS_METHODS.hubUpstreamStatus]: (_input) => upstreamSync.status(),
+        [WS_METHODS.hubUpstreamMerge]: (_input) => upstreamSync.merge(),
         [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
         [WS_METHODS.serverGetConfig]: (_input) =>
           loadServerConfig({ usageLimitsCommand: false, workspaceSnapshotsOnDemand: false }),

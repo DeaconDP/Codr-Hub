@@ -20,6 +20,24 @@ T3 Connect is optional and disabled in a fresh clone. Public configuration belon
 repository-root `.env` or `.env.local`, not an `apps/mobile/.env` file. See
 [`../../.env.example`](../../.env.example).
 
+## Physical iPhone
+
+On a Mac with Xcode, plug the iPhone in, unlock it, and run from the repository root:
+
+```bash
+npm run codr:phone
+```
+
+That builds, installs, and launches the development client. Then start Metro in `apps/mobile`:
+
+```bash
+vp run dev:client
+```
+
+The development client opens straight into Metro at `http://<this Mac>.local:8081` instead of
+Expo's server picker, so the phone must be on the same Wi-Fi. For another address, such as a
+Tailscale IP, set `CODR_HUB_METRO_URL` when building. The address is baked in at build time.
+
 ## Development
 
 For simulator, emulator, or Android phone development, boot or connect a device, then install the

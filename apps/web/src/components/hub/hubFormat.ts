@@ -6,6 +6,7 @@ import {
   mergedProjectLastLaunchAt,
   projectMatchesLane,
   type HubAutonomy,
+  type HubImportResult,
   type HubLane,
   type HubMergedProjectView,
   type HubNodeCheckout,
@@ -200,4 +201,16 @@ export function formatTimeUntilLabel(isoDate: string, nowMs: number = Date.now()
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h left`;
   return `${Math.floor(hours / 24)}d left`;
+}
+
+/** One line for a T3 import or sync result; zero counts are left out. */
+export function t3SyncSummary(result: HubImportResult): string {
+  const parts = [
+    result.imported > 0 ? `added ${result.imported}` : null,
+    result.updated > 0 ? `linked ${result.updated}` : null,
+    (result.created ?? 0) > 0 ? `added ${result.created} to T3` : null,
+  ].filter((part) => part !== null);
+  if (parts.length === 0) return "Already in step with T3.";
+  const text = parts.join(", ");
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
 }

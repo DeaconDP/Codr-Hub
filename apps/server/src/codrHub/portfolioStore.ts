@@ -44,6 +44,8 @@ export type NodeLaunchRecord = typeof NodeLaunchRecord.Type;
 export const NodeFile = Schema.Struct({
   nodeName: Schema.String,
   autopilotEnabled: Schema.Boolean,
+  /** Sync with T3; absent in files written before the setting existed. */
+  syncT3: Schema.optional(Schema.Boolean),
   ledger: Schema.Array(NodeLaunchRecord),
 });
 export type NodeFile = typeof NodeFile.Type;

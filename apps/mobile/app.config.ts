@@ -1,3 +1,5 @@
+import { hostname } from "node:os";
+
 import type { ExpoConfig } from "expo/config";
 
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
@@ -14,6 +16,17 @@ const iosAppleTeamId = repoEnv.T3CODE_IOS_APPLE_TEAM_ID?.trim() || "3825NK7CQ8";
 const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
   (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
+
+// Codr-Hub: the dev client opens straight into Metro on this Mac instead of
+// Expo's "Searching for development servers" launcher. Override with
+// CODR_HUB_METRO_URL (for example a Tailscale address).
+const devMetroUrl =
+  repoEnv.CODR_HUB_METRO_URL?.trim() ||
+  `http://${hostname().includes(".") ? hostname() : `${hostname()}.local`}:8081`;
+const devClientPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
+  "expo-dev-client",
+  { defaultLaunchURL: devMetroUrl, skipOnboarding: true },
+];
 
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
@@ -235,11 +248,10 @@ const config: ExpoConfig = {
   orientation: "portrait",
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
+  // Codr-Hub has no Expo/EAS project of its own yet, so OTA updates are off and
+  // the app is not linked to upstream's Expo account (no owner or eas.projectId).
   updates: {
-    enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    checkAutomatically: "ON_LOAD",
-    fallbackToCacheTimeout: 0,
+    enabled: false,
   },
   ios: {
     icon: variant.assets.iosIcon,
@@ -315,6 +327,7 @@ const config: ExpoConfig = {
     // Register first so this mod runs last (last-registered-first) and strips
     // push / Sign in with Apple after expo-notifications and Clerk add them.
     ...(isIosPersonalTeamBuild ? ["./plugins/withoutIosPersonalTeamCapabilities.cjs"] : []),
+    ...(APP_VARIANT === "development" ? [devClientPlugin] : []),
     "expo-asset",
     "react-native-pdf-jsi",
     [
@@ -463,12 +476,11 @@ const config: ExpoConfig = {
       tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
+    // No eas.projectId or owner: Codr-Hub has no Expo project yet. Keep Observe off Expo's ingest.
     eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
       observe: { endpointUrl: observeEndpointUrl },
     },
   },
-  owner: "pingdotgg",
   experiments: {
     // Metro only runs babel-plugin-react-compiler when this is set; see src/reactCompilerCoverage.test.ts.
     reactCompiler: true,

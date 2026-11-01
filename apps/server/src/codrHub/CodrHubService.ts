@@ -23,6 +23,8 @@ import {
   type HubGitGlance,
   type HubImportInput,
   type HubImportResult,
+  type HubInsights,
+  type HubProjectInsight,
   type HubLaunchRecord,
   type HubOk,
   type HubPace,
@@ -35,9 +37,11 @@ import {
   type HubSnapshot,
   type HubSyncInput,
   type HubSyncStatus,
+  type HubT3SyncStatus,
   type HubTask,
   type HubUpdateSettingsInput,
   type HubUpsertProjectInput,
+  type HubUpsertProjectsInput,
   type ModelSelection,
   type OrchestrationV2ThreadShell,
   type ServerProvider,
@@ -49,18 +53,22 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Ref from "effect/Ref";
+import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
+import * as OrchestrationEventStore from "../persistence/Services/OrchestrationEventStore.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { ProcessRunner } from "../processRunner.ts";
@@ -79,6 +87,14 @@ import {
 } from "./deezImport.ts";
 import { fleetShellBusy } from "./fleetDecide.ts";
 import { GIT_GLANCE_ARGS, parseGitGlance } from "./gitGlance.ts";
+import {
+  activitySinceMs,
+  bucketCommits,
+  detectPlatform,
+  isoFromMs,
+  parseCommitTimestamps,
+  yearStartMs,
+} from "./insights.ts";
 import { selectLaunchModel } from "./modelPolicy.ts";
 import { computePace, type PaceDecision } from "./pacing.ts";
 import * as Store from "./portfolioStore.ts";
@@ -90,6 +106,7 @@ import {
   pickNextProject,
   stageLabel,
 } from "./selection.ts";
+import { mergeT3Import, planT3Creates } from "./t3Import.ts";
 import { ownerTryStage, reduceTestHandoff } from "./testHandoff.ts";
 
 const AUTOPILOT_EVERY_MS = 60_000;
@@ -97,6 +114,9 @@ const GLANCE_EVERY_MS = 60_000;
 const SYNC_EVERY_MS = 5 * 60_000;
 const REFRESH_EVERY_MS = 20_000;
 const LEDGER_LIMIT = 200;
+const INSIGHTS_TTL_MS = 5 * 60_000;
+/** Back-off before resubscribing to T3 project changes after the stream fails. */
+const T3_WATCH_RETRY = "30 seconds";
 
 export class CodrHubService extends Context.Service<
   CodrHubService,
@@ -105,6 +125,7 @@ export class CodrHubService extends Context.Service<
     readonly subscribeBoard: (projectId: string) => Stream.Stream<HubBoardSnapshot, HubError>;
     readonly applyBoard: (command: HubBoardCommand) => Effect.Effect<HubBoardSnapshot, HubError>;
     readonly upsertProject: (input: HubUpsertProjectInput) => Effect.Effect<HubOk, HubError>;
+    readonly upsertProjects: (input: HubUpsertProjectsInput) => Effect.Effect<HubOk, HubError>;
     readonly deleteProject: (input: HubDeleteProjectInput) => Effect.Effect<HubOk, HubError>;
     readonly recordTestVerdict: (
       input: HubRecordTestVerdictInput,
@@ -116,6 +137,8 @@ export class CodrHubService extends Context.Service<
     readonly sync: (input: HubSyncInput) => Effect.Effect<HubSyncStatus, HubError>;
     /** One autopilot pass now, launching at most one thread even when every provider is on pace. */
     readonly runAutopilot: () => Effect.Effect<HubRunAutopilotResult, HubError>;
+    /** Platform and commit activity for this node's checkouts, cached for a few minutes. */
+    readonly insights: () => Effect.Effect<HubInsights, HubError>;
   }
 >()("t3/codrHub/CodrHubService") {}
 
@@ -178,6 +201,7 @@ export const layer = Layer.effect(
     const providers = yield* ProviderRegistry.ProviderRegistry;
     const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     const projectsService = yield* ProjectService.ProjectService;
+    const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
     const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
     const scheduler = yield* Scheduler.Scheduler;
@@ -253,6 +277,11 @@ export const layer = Layer.effect(
       lastSyncAt: null,
       lastError: null,
     });
+    const t3SyncRef = yield* Ref.make<Omit<HubT3SyncStatus, "enabled">>({
+      lastSyncAt: null,
+      lastResult: null,
+      lastError: null,
+    });
     const noteRef = yield* Ref.make<string | null>(null);
     const timersRef = yield* Ref.make({ autopilot: 0, glance: 0, sync: 0, refresh: 0 });
     const writeLock = yield* Semaphore.make(1);
@@ -311,6 +340,74 @@ export const layer = Layer.effect(
       yield* Ref.set(existsRef, new Map(results.map(([local, exists]) => [local, exists])));
       yield* Ref.set(glancesRef, new Map(results.map(([local, , git]) => [local, git])));
     });
+
+    // --- dashboard insights ----------------------------------------------------
+
+    const gitOut = (cwd: string, args: ReadonlyArray<string>) =>
+      runner.run({ command: "git", args, cwd, timeout: "15 seconds" }).pipe(
+        Effect.map((out) => (out.code === 0 ? out.stdout.trim() : "")),
+        Effect.orElseSucceed(() => ""),
+      );
+
+    const projectInsight = (project: HubProject, cwd: string, now: number) =>
+      Effect.gen(function* () {
+        const entries = yield* fs.readDirectory(cwd).pipe(Effect.orElseSucceed(() => []));
+        // Non-git and empty repos answer non-zero, which reads as no commits.
+        const total = Number(yield* gitOut(cwd, ["rev-list", "--count", "HEAD"])) || 0;
+        const since = isoFromMs(activitySinceMs(now));
+        const recent = parseCommitTimestamps(
+          yield* gitOut(cwd, ["log", "--format=%ct", `--since=${since}`, "HEAD"]),
+        );
+        const [last] = parseCommitTimestamps(yield* gitOut(cwd, ["log", "-1", "--format=%ct"]));
+        return {
+          projectId: project.id,
+          platform: detectPlatform(project.tags, entries),
+          commits: bucketCommits(recent, total, now, yearStartMs(now)),
+          lastCommitAt: last === undefined ? null : isoFromMs(last * 1000),
+        } satisfies HubProjectInsight;
+      });
+
+    const computeInsights = Effect.gen(function* () {
+      const now = yield* nowMs;
+      const node = yield* Ref.get(nodeRef);
+      const checkouts = [...(yield* Ref.get(projectsRef)).values()].flatMap((project) => {
+        const local = project.archived ? null : localPathOf(project, node.nodeName);
+        return local ? [{ project, local }] : [];
+      });
+      const projects = yield* Effect.forEach(
+        checkouts,
+        ({ project, local }) =>
+          Effect.gen(function* () {
+            const exists = yield* fs.exists(local).pipe(Effect.orElseSucceed(() => false));
+            return exists ? [yield* projectInsight(project, local, now)] : [];
+          }),
+        { concurrency: 4 },
+      );
+      return {
+        nodeName: node.nodeName,
+        computedAt: isoFromMs(now),
+        projects: projects.flat(),
+      } satisfies HubInsights;
+    });
+
+    const insightsRef = yield* Ref.make<{ atMs: number; value: HubInsights } | null>(null);
+    const insights = () =>
+      Effect.gen(function* () {
+        const now = yield* nowMs;
+        const node = yield* Ref.get(nodeRef);
+        const cached = yield* Ref.get(insightsRef);
+        if (
+          cached !== null &&
+          cached.value.nodeName === node.nodeName &&
+          now - cached.atMs < INSIGHTS_TTL_MS
+        )
+          return cached.value;
+        const value = yield* computeInsights;
+        yield* Ref.set(insightsRef, { atMs: now, value });
+        return value;
+      });
+
+    // --- snapshot ------------------------------------------------------------
 
     const ledgerState = Effect.gen(function* () {
       if (nodeReadError !== null) return yield* nodeReadError;
@@ -499,6 +596,7 @@ export const layer = Layer.effect(
           ? deezPath
           : null,
         fleet: yield* readFleetReport,
+        t3Sync: { enabled: node.syncT3 === true, ...(yield* Ref.get(t3SyncRef)) },
       } satisfies HubSnapshot;
     });
 
@@ -642,18 +740,19 @@ export const layer = Layer.effect(
       return id;
     };
 
-    const upsertProject: CodrHubService["Service"]["upsertProject"] = Effect.fn(
-      "codrHub.upsertProject",
-    )(function* (input: Parameters<CodrHubService["Service"]["upsertProject"]>[0]) {
-      const projects = yield* Ref.get(projectsRef);
-      const node = yield* Ref.get(nodeRef);
-      const now = yield* nowIso;
+    /** Applies one upsert to `projects` (in place) and returns the saved record. */
+    const applyUpsert = (
+      projects: Map<string, HubProject>,
+      input: HubUpsertProjectInput,
+      nodeName: string,
+      now: string,
+    ): HubProject | HubError => {
       const existing = input.id === undefined ? undefined : projects.get(input.id);
       if (input.id !== undefined && existing === undefined) {
-        return yield* new HubError({ message: `Project ${input.id} not found.` });
+        return new HubError({ message: `Project ${input.id} not found.` });
       }
       if (existing === undefined && input.name === undefined) {
-        return yield* new HubError({ message: "A new project needs a name." });
+        return new HubError({ message: "A new project needs a name." });
       }
       const base: HubProject = existing ?? {
         id: uniqueId(input.name!, projects),
@@ -679,16 +778,43 @@ export const layer = Layer.effect(
       };
       const { id: _id, localPath, ...patch } = input;
       const hosts = { ...base.hosts };
-      if (localPath === null) delete hosts[node.nodeName];
-      else if (localPath !== undefined) hosts[node.nodeName] = { path: localPath };
+      if (localPath === null) delete hosts[nodeName];
+      else if (localPath !== undefined) hosts[nodeName] = { path: localPath };
       const next: HubProject = {
         ...base,
         ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)),
         hosts,
         updatedAt: now,
       };
-      yield* write(`${existing ? "Update" : "Add"} ${next.name}`, saveProject(next));
-      if (localPath !== undefined) yield* refreshGlances.pipe(Effect.andThen(notify));
+      projects.set(next.id, next);
+      return next;
+    };
+
+    const upsertProject: CodrHubService["Service"]["upsertProject"] = (input) =>
+      upsertProjects({ projects: [input] });
+
+    const upsertProjects: CodrHubService["Service"]["upsertProjects"] = Effect.fn(
+      "codrHub.upsertProjects",
+    )(function* (input: Parameters<CodrHubService["Service"]["upsertProjects"]>[0]) {
+      if (input.projects.length === 0) return OK;
+      const projects = new Map(yield* Ref.get(projectsRef));
+      const node = yield* Ref.get(nodeRef);
+      const now = yield* nowIso;
+      const saved: HubProject[] = [];
+      for (const entry of input.projects) {
+        const next = applyUpsert(projects, entry, node.nodeName, now);
+        if (isHubError(next)) return yield* next;
+        saved.push(next);
+      }
+      const [first] = saved;
+      const message =
+        saved.length === 1 && first
+          ? `${input.projects[0]?.id === undefined ? "Add" : "Update"} ${first.name}`
+          : `Update ${saved.length} projects`;
+      yield* write(message, Effect.forEach(saved, saveProject, { discard: true }));
+      if (input.projects.some((entry) => entry.localPath !== undefined)) {
+        yield* refreshGlances.pipe(Effect.andThen(notify));
+      }
       return OK;
     }, writeLock.withPermits(1));
 
@@ -773,7 +899,7 @@ export const layer = Layer.effect(
       "codrHub.updateSettings",
     )(function* (input: Parameters<CodrHubService["Service"]["updateSettings"]>[0]) {
       const hub = yield* Ref.get(hubRef);
-      const { paceTargets, ...rest } = input;
+      const { paceTargets, nodeColors, ...rest } = input;
       const patch = Object.fromEntries(
         Object.entries(rest).filter(([, value]) => value !== undefined),
       );
@@ -782,7 +908,20 @@ export const layer = Layer.effect(
         cursor: paceTargets?.cursor ?? hub.settings.paceTargets.cursor,
         codex: paceTargets?.codex ?? hub.settings.paceTargets.codex,
       };
-      const next = { ...hub, settings: { ...hub.settings, ...patch, paceTargets: nextTargets } };
+      const nextColors = { ...hub.settings.nodeColors };
+      for (const [nodeName, color] of Object.entries(nodeColors ?? {})) {
+        if (color === null) delete nextColors[nodeName];
+        else nextColors[nodeName] = color;
+      }
+      const next = {
+        ...hub,
+        settings: {
+          ...hub.settings,
+          ...patch,
+          paceTargets: nextTargets,
+          nodeColors: nextColors,
+        },
+      };
       yield* write(
         "Update hub settings",
         io(Store.writeHubFile(paths, next)).pipe(Effect.andThen(Ref.set(hubRef, next))),
@@ -816,11 +955,13 @@ export const layer = Layer.effect(
           ...node,
           nodeName: rename ?? node.nodeName,
           autopilotEnabled: input.autopilotEnabled ?? node.autopilotEnabled,
+          syncT3: input.syncT3 ?? node.syncT3,
         }));
         if (input.autopilotEnabled !== undefined) {
           yield* Ref.update(timersRef, (timers) => ({ ...timers, autopilot: 0 }));
           yield* Ref.set(releaseQuotaPending, true);
         }
+        if (input.syncT3 !== undefined) yield* watchT3(input.syncT3);
         yield* notify;
         return OK;
       },
@@ -828,9 +969,158 @@ export const layer = Layer.effect(
       autopilotLock.withPermits(1),
     );
 
-    const importProjects: CodrHubService["Service"]["importProjects"] = Effect.fn(
-      "codrHub.importProjects",
-    )(function* (input: Parameters<CodrHubService["Service"]["importProjects"]>[0]) {
+    // --- Sync with T3 ----------------------------------------------------------
+
+    /** Adds one Hub checkout to T3 through the normal project-create command. */
+    const createT3Project = (project: HubProject, workspaceRoot: string) =>
+      Effect.gen(function* () {
+        // Also true for a root T3 knows under another spelling, or one the owner removed in T3.
+        const known = yield* projectsService.getByWorkspaceRoot(workspaceRoot, {
+          includeDeleted: true,
+        });
+        if (Option.isSome(known)) return false;
+        yield* projectsService.create({
+          commandId: CommandId.make(`codr-hub:t3-sync:${yield* uuid}`),
+          projectId: ProjectId.make(yield* uuid),
+          title: project.name,
+          workspaceRoot,
+        });
+        return true;
+      });
+
+    /**
+     * Brings this node's T3 projects into the portfolio and, with `toT3`, adds
+     * this node's Hub checkouts to T3. Never deletes on either side. Callers
+     * hold writeLock.
+     */
+    const syncWithT3 = (options: { readonly toT3: boolean }) =>
+      Effect.gen(function* () {
+        const node = yield* Ref.get(nodeRef);
+        const existing = [...(yield* Ref.get(projectsRef)).values()];
+        const shells = yield* projectsService
+          .listShells()
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new HubError({ message: "Could not read this node's T3 projects.", cause }),
+            ),
+          );
+        const missingPathIds = new Set<string>();
+        for (const project of existing) {
+          const host = project.hosts[node.nodeName];
+          if (host && !(yield* fs.exists(host.path).pipe(Effect.orElseSucceed(() => false)))) {
+            missingPathIds.add(project.id);
+          }
+        }
+        const now = yield* nowIso;
+        const merged = mergeT3Import(existing, shells, {
+          nodeName: node.nodeName,
+          nowIso: now,
+          missingPathIds,
+        });
+        if (merged.upserts.length > 0) {
+          yield* write(
+            `Import ${merged.imported} new, ${merged.updated} linked projects from T3 on ${node.nodeName}`,
+            Effect.forEach(merged.upserts, saveProject, { discard: true }),
+          );
+          yield* refreshGlances;
+        }
+        let created = 0;
+        const failures: string[] = [];
+        if (options.toT3) {
+          const plan = planT3Creates([...(yield* Ref.get(projectsRef)).values()], shells, {
+            nodeName: node.nodeName,
+            missingPathIds,
+          });
+          for (const { project, workspaceRoot } of plan) {
+            const result = yield* Effect.result(createT3Project(project, workspaceRoot));
+            if (result._tag === "Failure")
+              failures.push(`${project.name}: ${result.failure.message}`);
+            else if (result.success) created += 1;
+          }
+        }
+        const result = {
+          imported: merged.imported,
+          updated: merged.updated,
+          skipped: merged.skipped,
+          created,
+        };
+        yield* Ref.set(t3SyncRef, {
+          lastSyncAt: now,
+          lastResult: result,
+          lastError: failures.length === 0 ? null : `Not added to T3: ${failures.join("; ")}`,
+        });
+        yield* notify;
+        return result;
+      }).pipe(
+        Effect.tapError((error) =>
+          nowIso.pipe(
+            Effect.flatMap((now) =>
+              Ref.update(t3SyncRef, (state) => ({
+                ...state,
+                lastSyncAt: now,
+                lastError: error.message,
+              })),
+            ),
+            Effect.andThen(notify),
+          ),
+        ),
+      );
+
+    // Every wake runs one sync; wakes that arrive during a sync collapse into
+    // one more, so a burst of T3 project events costs at most two passes.
+    const t3Wake = yield* Queue.sliding<void>(1);
+    yield* Stream.fromQueue(t3Wake).pipe(
+      Stream.runForEach(() =>
+        Effect.gen(function* () {
+          if ((yield* Ref.get(nodeRef)).syncT3 !== true) return;
+          yield* syncWithT3({ toT3: true }).pipe(
+            writeLock.withPermits(1),
+            Effect.catch((cause) => Effect.logWarning("Codr-Hub T3 sync failed", { cause })),
+          );
+        }),
+      ),
+      Effect.forkScoped,
+    );
+
+    // Wakes once per (re)subscribe, which covers startup, turning sync on, and
+    // events missed while resubscribing, then on each committed project event.
+    // Thread events are dropped at the projection so the live buffer stays tiny.
+    const watchT3Projects = Stream.unwrap(
+      Effect.map(applicationEvents.latestApplicationSequence, (afterSequence) =>
+        Stream.concat(
+          Stream.make(true),
+          applicationEvents
+            .streamProjectedApplicationEvents({
+              afterSequence,
+              project: (event) => ({ sequence: event.sequence, project: "aggregateKind" in event }),
+            })
+            .pipe(Stream.filter((event) => event.project)),
+        ),
+      ),
+    ).pipe(
+      Stream.tapError((cause) => Effect.logWarning("Codr-Hub T3 project watch failed", { cause })),
+      Stream.retry(Schedule.spaced(T3_WATCH_RETRY)),
+      Stream.runForEach(() => Queue.offer(t3Wake, undefined)),
+    );
+
+    // Subscribed only while sync is on, so an idle node pays nothing per event.
+    const layerScope = yield* Effect.scope;
+    const t3WatchRef = yield* Ref.make<Fiber.Fiber<unknown, unknown> | null>(null);
+    const watchT3 = (on: boolean) =>
+      Effect.gen(function* () {
+        const current = yield* Ref.get(t3WatchRef);
+        if (on && current === null) {
+          yield* Ref.set(t3WatchRef, yield* Effect.forkIn(watchT3Projects, layerScope));
+        } else if (!on && current !== null) {
+          yield* Ref.set(t3WatchRef, null);
+          yield* Fiber.interrupt(current);
+        }
+      });
+
+    const importDeezProjects = Effect.fn("codrHub.importDeezProjects")(function* (
+      input: Extract<HubImportInput, { source: "deez-project-manager" }>,
+    ) {
       const file = input.path ?? deezProjectManagerFile(path, platform);
       const text = yield* fs
         .readFileString(file)
@@ -875,7 +1165,16 @@ export const layer = Layer.effect(
       };
     }, writeLock.withPermits(1));
 
-    const runSync = Effect.fn("codrHub.runSync")(function* (input: HubSyncInput) {
+    const importProjects: CodrHubService["Service"]["importProjects"] = (input) =>
+      input.source === "t3"
+        ? Ref.get(nodeRef).pipe(
+            // The manual button stays a one-way import until Sync with T3 is on.
+            Effect.flatMap((node) => syncWithT3({ toT3: node.syncT3 === true })),
+            writeLock.withPermits(1),
+          )
+        : importDeezProjects(input);
+
+    const runSync = Effect.fn("codrHub.runSync")(function* (input: HubSyncInput = {}) {
       if (input.remote !== undefined && input.remote !== (yield* io(Store.readRemote(paths)))) {
         const { node, records } = yield* ledgerState;
         if (node.autopilotEnabled || records.some((entry) => entry.running || entry.awaiting)) {
@@ -1413,12 +1712,14 @@ export const layer = Layer.effect(
 
     yield* publishFleetActivity;
     yield* scheduler.register("codr-hub", tick);
+    if ((yield* Ref.get(nodeRef)).syncT3 === true) yield* watchT3(true);
 
     return CodrHubService.of({
       subscribe,
       subscribeBoard,
       applyBoard,
       upsertProject,
+      upsertProjects,
       deleteProject,
       recordTestVerdict,
       setStrategy,
@@ -1427,6 +1728,7 @@ export const layer = Layer.effect(
       importProjects,
       sync,
       runAutopilot,
+      insights,
     });
   }),
 );

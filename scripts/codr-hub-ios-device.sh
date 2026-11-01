@@ -19,6 +19,9 @@ export T3CODE_IOS_PERSONAL_TEAM="${T3CODE_IOS_PERSONAL_TEAM:-1}"
 export T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID="${T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID:-io.worldbuild.codrhub.dev}"
 export APP_VARIANT="${APP_VARIANT:-development}"
 export EXPO_NO_GIT_STATUS=1
+# Baked into the dev client as its launch URL, so the app opens straight into
+# Metro instead of Expo's server picker. Override for Tailscale.
+export CODR_HUB_METRO_URL="${CODR_HUB_METRO_URL:-http://$(scutil --get LocalHostName).local:8081}"
 
 DEVICE="${1:-}"
 if [[ -z "$DEVICE" ]]; then
@@ -67,3 +70,20 @@ if [[ -z "$APP" ]]; then
   exit 1
 fi
 xcrun devicectl device install app --device "$DEVICE" "$APP"
+
+# Open the app pointed at Metro. If Metro is not running yet, the app shows
+# Expo's server list until it is.
+DEEP_LINK="codrhub-dev://expo-development-client/?url=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$CODR_HUB_METRO_URL")"
+xcrun devicectl device process launch --device "$DEVICE" --terminate-existing \
+  --payload-url "$DEEP_LINK" "$T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID" || true
+
+cat <<EOF
+
+Installed Codr-Hub Dev. Next step, on this Mac:
+
+  cd apps/mobile && vp run dev:client
+
+Then open Codr-Hub Dev on the iPhone. It connects to $CODR_HUB_METRO_URL
+automatically (same Wi-Fi as this Mac). If it ever shows "Searching for
+development servers", tap "Enter URL manually" and type that address.
+EOF
