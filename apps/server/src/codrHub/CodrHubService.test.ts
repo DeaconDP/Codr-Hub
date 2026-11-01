@@ -18,7 +18,7 @@ import type {
 import * as ServerConfig from "../config.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import * as OrchestrationEventStore from "../persistence/Services/OrchestrationEventStore.ts";
+import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
@@ -187,7 +187,7 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
       const events = yield* Queue.unbounded<ApplicationStoredEvent>();
       const projects: Partial<ProjectService.ProjectService["Service"]> = {
         listShells: () => Effect.sync(() => [...shells]),
-        getByWorkspaceRoot: () => Effect.succeed(Option.none()),
+        getByWorkspaceRoot: () => Effect.succeedNone,
         create: (input) =>
           Effect.sync(() => {
             created.push({ title: input.title, workspaceRoot: input.workspaceRoot });
@@ -222,7 +222,12 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
           sequence: 1,
         } as unknown as ApplicationStoredEvent);
         const second = yield* hub.subscribe().pipe(
-          Stream.filter((next) => next.projects.some((view) => view.project.id === "beta")),
+          // Project writes notify before the sync result lands; wait for the result.
+          Stream.filter(
+            (next) =>
+              next.projects.some((view) => view.project.id === "beta") &&
+              next.t3Sync?.lastResult !== first.t3Sync?.lastResult,
+          ),
           Stream.runHead,
           Effect.map(Option.getOrThrow),
         );

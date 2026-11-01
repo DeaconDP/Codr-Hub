@@ -68,7 +68,7 @@ import * as Stream from "effect/Stream";
 
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
-import * as OrchestrationEventStore from "../persistence/Services/OrchestrationEventStore.ts";
+import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { ProcessRunner } from "../processRunner.ts";
@@ -349,23 +349,26 @@ export const layer = Layer.effect(
         Effect.orElseSucceed(() => ""),
       );
 
-    const projectInsight = (project: HubProject, cwd: string, now: number) =>
-      Effect.gen(function* () {
-        const entries = yield* fs.readDirectory(cwd).pipe(Effect.orElseSucceed(() => []));
-        // Non-git and empty repos answer non-zero, which reads as no commits.
-        const total = Number(yield* gitOut(cwd, ["rev-list", "--count", "HEAD"])) || 0;
-        const since = isoFromMs(activitySinceMs(now));
-        const recent = parseCommitTimestamps(
-          yield* gitOut(cwd, ["log", "--format=%ct", `--since=${since}`, "HEAD"]),
-        );
-        const [last] = parseCommitTimestamps(yield* gitOut(cwd, ["log", "-1", "--format=%ct"]));
-        return {
-          projectId: project.id,
-          platform: detectPlatform(project.tags, entries),
-          commits: bucketCommits(recent, total, now, yearStartMs(now)),
-          lastCommitAt: last === undefined ? null : isoFromMs(last * 1000),
-        } satisfies HubProjectInsight;
-      });
+    const projectInsight = Effect.fn("codrHub.projectInsight")(function* (
+      project: HubProject,
+      cwd: string,
+      now: number,
+    ) {
+      const entries = yield* fs.readDirectory(cwd).pipe(Effect.orElseSucceed(() => []));
+      // Non-git and empty repos answer non-zero, which reads as no commits.
+      const total = Number(yield* gitOut(cwd, ["rev-list", "--count", "HEAD"])) || 0;
+      const since = isoFromMs(activitySinceMs(now));
+      const recent = parseCommitTimestamps(
+        yield* gitOut(cwd, ["log", "--format=%ct", `--since=${since}`, "HEAD"]),
+      );
+      const [last] = parseCommitTimestamps(yield* gitOut(cwd, ["log", "-1", "--format=%ct"]));
+      return {
+        projectId: project.id,
+        platform: detectPlatform(project.tags, entries),
+        commits: bucketCommits(recent, total, now, yearStartMs(now)),
+        lastCommitAt: last === undefined ? null : isoFromMs(last * 1000),
+      } satisfies HubProjectInsight;
+    });
 
     const computeInsights = Effect.gen(function* () {
       const now = yield* nowMs;
@@ -391,21 +394,20 @@ export const layer = Layer.effect(
     });
 
     const insightsRef = yield* Ref.make<{ atMs: number; value: HubInsights } | null>(null);
-    const insights = () =>
-      Effect.gen(function* () {
-        const now = yield* nowMs;
-        const node = yield* Ref.get(nodeRef);
-        const cached = yield* Ref.get(insightsRef);
-        if (
-          cached !== null &&
-          cached.value.nodeName === node.nodeName &&
-          now - cached.atMs < INSIGHTS_TTL_MS
-        )
-          return cached.value;
-        const value = yield* computeInsights;
-        yield* Ref.set(insightsRef, { atMs: now, value });
-        return value;
-      });
+    const insights = Effect.fn("codrHub.insights")(function* () {
+      const now = yield* nowMs;
+      const node = yield* Ref.get(nodeRef);
+      const cached = yield* Ref.get(insightsRef);
+      if (
+        cached !== null &&
+        cached.value.nodeName === node.nodeName &&
+        now - cached.atMs < INSIGHTS_TTL_MS
+      )
+        return cached.value;
+      const value = yield* computeInsights;
+      yield* Ref.set(insightsRef, { atMs: now, value });
+      return value;
+    });
 
     // --- snapshot ------------------------------------------------------------
 
@@ -972,29 +974,31 @@ export const layer = Layer.effect(
     // --- Sync with T3 ----------------------------------------------------------
 
     /** Adds one Hub checkout to T3 through the normal project-create command. */
-    const createT3Project = (project: HubProject, workspaceRoot: string) =>
-      Effect.gen(function* () {
-        // Also true for a root T3 knows under another spelling, or one the owner removed in T3.
-        const known = yield* projectsService.getByWorkspaceRoot(workspaceRoot, {
-          includeDeleted: true,
-        });
-        if (Option.isSome(known)) return false;
-        yield* projectsService.create({
-          commandId: CommandId.make(`codr-hub:t3-sync:${yield* uuid}`),
-          projectId: ProjectId.make(yield* uuid),
-          title: project.name,
-          workspaceRoot,
-        });
-        return true;
+    const createT3Project = Effect.fn("codrHub.createT3Project")(function* (
+      project: HubProject,
+      workspaceRoot: string,
+    ) {
+      // Also true for a root T3 knows under another spelling, or one the owner removed in T3.
+      const known = yield* projectsService.getByWorkspaceRoot(workspaceRoot, {
+        includeDeleted: true,
       });
+      if (Option.isSome(known)) return false;
+      yield* projectsService.create({
+        commandId: CommandId.make(`codr-hub:t3-sync:${yield* uuid}`),
+        projectId: ProjectId.make(yield* uuid),
+        title: project.name,
+        workspaceRoot,
+      });
+      return true;
+    });
 
     /**
      * Brings this node's T3 projects into the portfolio and, with `toT3`, adds
      * this node's Hub checkouts to T3. Never deletes on either side. Callers
      * hold writeLock.
      */
-    const syncWithT3 = (options: { readonly toT3: boolean }) =>
-      Effect.gen(function* () {
+    const syncWithT3 = Effect.fn("codrHub.syncWithT3")(
+      function* (options: { readonly toT3: boolean }) {
         const node = yield* Ref.get(nodeRef);
         const existing = [...(yield* Ref.get(projectsRef)).values()];
         const shells = yield* projectsService
@@ -1052,20 +1056,20 @@ export const layer = Layer.effect(
         });
         yield* notify;
         return result;
-      }).pipe(
-        Effect.tapError((error) =>
-          nowIso.pipe(
-            Effect.flatMap((now) =>
-              Ref.update(t3SyncRef, (state) => ({
-                ...state,
-                lastSyncAt: now,
-                lastError: error.message,
-              })),
-            ),
-            Effect.andThen(notify),
+      },
+      Effect.tapError((error) =>
+        nowIso.pipe(
+          Effect.flatMap((now) =>
+            Ref.update(t3SyncRef, (state) => ({
+              ...state,
+              lastSyncAt: now,
+              lastError: error.message,
+            })),
           ),
+          Effect.andThen(notify),
         ),
-      );
+      ),
+    );
 
     // Every wake runs one sync; wakes that arrive during a sync collapse into
     // one more, so a burst of T3 project events costs at most two passes.
@@ -1107,16 +1111,15 @@ export const layer = Layer.effect(
     // Subscribed only while sync is on, so an idle node pays nothing per event.
     const layerScope = yield* Effect.scope;
     const t3WatchRef = yield* Ref.make<Fiber.Fiber<unknown, unknown> | null>(null);
-    const watchT3 = (on: boolean) =>
-      Effect.gen(function* () {
-        const current = yield* Ref.get(t3WatchRef);
-        if (on && current === null) {
-          yield* Ref.set(t3WatchRef, yield* Effect.forkIn(watchT3Projects, layerScope));
-        } else if (!on && current !== null) {
-          yield* Ref.set(t3WatchRef, null);
-          yield* Fiber.interrupt(current);
-        }
-      });
+    const watchT3 = Effect.fn("codrHub.watchT3")(function* (on: boolean) {
+      const current = yield* Ref.get(t3WatchRef);
+      if (on && current === null) {
+        yield* Ref.set(t3WatchRef, yield* Effect.forkIn(watchT3Projects, layerScope));
+      } else if (!on && current !== null) {
+        yield* Ref.set(t3WatchRef, null);
+        yield* Fiber.interrupt(current);
+      }
+    });
 
     const importDeezProjects = Effect.fn("codrHub.importDeezProjects")(function* (
       input: Extract<HubImportInput, { source: "deez-project-manager" }>,
@@ -1174,7 +1177,7 @@ export const layer = Layer.effect(
           )
         : importDeezProjects(input);
 
-    const runSync = Effect.fn("codrHub.runSync")(function* (input: HubSyncInput = {}) {
+    const runSync = Effect.fn("codrHub.runSync")(function* (input: HubSyncInput) {
       if (input.remote !== undefined && input.remote !== (yield* io(Store.readRemote(paths)))) {
         const { node, records } = yield* ledgerState;
         if (node.autopilotEnabled || records.some((entry) => entry.running || entry.awaiting)) {
