@@ -10,11 +10,12 @@ import { useMemo, useState } from "react";
 
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import { serverEnvironment } from "../../state/server";
+import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Input } from "../ui/input";
 import { HubProjectDialog } from "./HubProjectDialog";
-import { filterAndSortProjects, projectGlance } from "./hubFormat";
+import { filterAndSortProjects, projectGlance, t3SyncSummary } from "./hubFormat";
 import { useHubAction } from "./useHubAction";
 
 /** Ranked projects. Tap a row to change it. Rank is the only order. */
@@ -32,6 +33,11 @@ export function HubProjectsTable(props: {
     serverEnvironment.hubImport,
     environmentId,
     "Could not import from Deez-Project-Manager",
+  );
+  const importT3 = useHubAction(
+    serverEnvironment.hubImport,
+    environmentId,
+    "Could not import T3 projects",
   );
   const [importNote, setImportNote] = useState<string | null>(null);
 
@@ -54,7 +60,32 @@ export function HubProjectsTable(props: {
       setImportNote(`Imported ${result.imported}, updated ${result.updated}.`);
     }
   };
+  const t3Sync = snapshot.t3Sync;
+  const syncOn = t3Sync?.enabled === true;
+  const runT3Import = async () => {
+    const result = await importT3.run({ source: "t3" });
+    // With sync on, the snapshot carries the result for every client.
+    if (result && !syncOn)
+      setImportNote(`${t3SyncSummary(result)} From T3 on ${selectedNodeName}.`);
+  };
+  const t3Label = syncOn
+    ? importT3.busy
+      ? "Syncing…"
+      : "Sync now"
+    : importT3.busy
+      ? "Importing…"
+      : "Import from T3";
+  const t3Note =
+    !syncOn || !t3Sync.lastSyncAt ? null : t3Sync.lastError ? (
+      <span className="text-destructive-foreground">T3 sync: {t3Sync.lastError}</span>
+    ) : (
+      `Synced with T3 ${formatRelativeTimeLabel(t3Sync.lastSyncAt)}. ${
+        t3Sync.lastResult ? t3SyncSummary(t3Sync.lastResult) : ""
+      }`
+    );
+  const note = importNote ?? t3Note;
   const canImport = snapshot.deezProjectManagerPath !== null && selectedNodeName !== "";
+  const canImportT3 = selectedNodeName !== "";
 
   return (
     <section aria-labelledby="hub-projects-heading" className="flex flex-col gap-3">
@@ -69,6 +100,16 @@ export function HubProjectsTable(props: {
           </EmptyHeader>
           <EmptyContent>
             <div className="flex flex-wrap justify-center gap-2">
+              {canImportT3 ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={importT3.busy}
+                  onClick={() => void runT3Import()}
+                >
+                  {t3Label}
+                </Button>
+              ) : null}
               {canImport ? (
                 <Button
                   size="sm"
@@ -76,7 +117,7 @@ export function HubProjectsTable(props: {
                   disabled={importDeez.busy}
                   onClick={() => void runImport()}
                 >
-                  {importDeez.busy ? "Importing…" : "Import"}
+                  {importDeez.busy ? "Importing…" : "Import from Deez-PM"}
                 </Button>
               ) : null}
               <Button size="sm" onClick={() => setEditing("new")}>
@@ -101,9 +142,9 @@ export function HubProjectsTable(props: {
               Add
             </Button>
           </div>
-          {importNote ? (
+          {note ? (
             <p role="status" className="text-sm text-muted-foreground">
-              {importNote}
+              {note}
             </p>
           ) : null}
           {rows.length === 0 ? (
@@ -125,7 +166,7 @@ export function HubProjectsTable(props: {
               ))}
             </ol>
           )}
-          {finishedCount > 0 || canImport ? (
+          {finishedCount > 0 || canImport || canImportT3 ? (
             <div className="flex flex-wrap gap-2">
               {finishedCount > 0 ? (
                 <Button
@@ -137,6 +178,17 @@ export function HubProjectsTable(props: {
                   {showFinished ? "Hide finished" : `Finished (${finishedCount})`}
                 </Button>
               ) : null}
+              {canImportT3 ? (
+                <Button
+                  size="sm"
+                  variant="ghost-muted"
+                  disabled={importT3.busy}
+                  aria-busy={importT3.busy}
+                  onClick={() => void runT3Import()}
+                >
+                  {t3Label}
+                </Button>
+              ) : null}
               {canImport ? (
                 <Button
                   size="sm"
@@ -145,7 +197,7 @@ export function HubProjectsTable(props: {
                   aria-busy={importDeez.busy}
                   onClick={() => void runImport()}
                 >
-                  {importDeez.busy ? "Importing…" : "Import"}
+                  {importDeez.busy ? "Importing…" : "Import from Deez-PM"}
                 </Button>
               ) : null}
             </div>

@@ -2,7 +2,19 @@
 
 The fleet parent keeps one source checkout running and fast-forwards it when its upstream changes. It waits for agent turns, approvals, and background work to finish before stopping the server. This is separate from the installed T3 server service.
 
-## Start and enable at login
+## Quick start
+
+From the checkout root:
+
+```sh
+npm run codr:always-on    # start now and at every login
+npm run codr:always-off   # remove the login entry
+```
+
+This uses the default home `<checkout>/.t3` and dev-runner's ports. The rest of this page covers
+custom homes, pinned ports, and blocked updates.
+
+## Start and enable at login manually
 
 Use Node 24 and install the checkout's dependencies with `vp i`. Stop any development server using the chosen data directory through its original launcher after its work finishes. The parent only manages processes it started.
 
@@ -34,7 +46,7 @@ Omit `--home-dir` and `--port` for the defaults. The login entry saves the resol
 
 Hub reports the reason when an update waits or gets stuck. A dirty, ahead, or diverged checkout stays unchanged. Resolve that Git state yourself. A server with no fresh activity report stays running until reporting recovers or it exits. If an untracked server uses the same data directory, stop it through its original launcher before letting the parent start its replacement.
 
-Each node needs its own login entry and upstream-tracking branch. Only fast-forwards are automatic; the parent never pushes commits.
+Each node needs its own login entry and upstream-tracking branch. Only fast-forwards are automatic; the parent never pushes commits. Hub's Update from T3 Code pushes a merge of T3 Code's main to `origin`, which every parent then picks up.
 
 ## Remove login startup
 

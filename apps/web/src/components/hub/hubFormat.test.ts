@@ -7,6 +7,7 @@ import {
   projectGlance,
   stageOptions,
   stageSelectValue,
+  t3SyncSummary,
 } from "./hubFormat";
 
 const view = (
@@ -172,5 +173,17 @@ describe("strategy ids", () => {
   it("slugifies and suffixes so concurrent adds do not collide", () => {
     expect(newStrategyId("Ship Emily-OS v1!", "abcdef123")).toBe("ship-emily-os-v1-abcdef");
     expect(newStrategyId("!!!", "zzzzzz")).toBe("priority-zzzzzz");
+  });
+});
+
+describe("t3SyncSummary", () => {
+  it("names only the counts that moved", () => {
+    expect(t3SyncSummary({ imported: 2, updated: 0, skipped: 5 })).toBe("Added 2.");
+    expect(t3SyncSummary({ imported: 0, updated: 1, skipped: 0, created: 3 })).toBe(
+      "Linked 1, added 3 to T3.",
+    );
+    expect(t3SyncSummary({ imported: 0, updated: 0, skipped: 4, created: 0 })).toBe(
+      "Already in step with T3.",
+    );
   });
 });

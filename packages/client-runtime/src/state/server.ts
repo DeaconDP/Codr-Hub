@@ -38,10 +38,13 @@ import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import * as Persistence from "../platform/persistence.ts";
 import { runCachePersistence } from "./cachePersistence.ts";
-import { createHubMergedProjectsAtomFamily } from "./hubMerge.ts";
+import {
+  createHubMergedInsightsAtomFamily,
+  createHubMergedProjectsAtomFamily,
+} from "./hubMerge.ts";
 
 // Re-exported so consumers' inferred `serverEnvironment` type stays nameable.
-export type { HubMergedProjectsLive } from "./hubMerge.ts";
+export type { HubMergedInsightsLive, HubMergedProjectsLive } from "./hubMerge.ts";
 import {
   isRpcClientError,
   request,
@@ -995,6 +998,13 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.hubBoardSubscribe,
   });
   const hubMergedProjects = createHubMergedProjectsAtomFamily(hubLive);
+  /** Dashboard platform and commit activity; the server caches each answer for 5 minutes. */
+  const hubInsights = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:server:hub:insights",
+    tag: WS_METHODS.hubInsights,
+    staleTimeMs: 5 * 60_000,
+  });
+  const hubMergedInsights = createHubMergedInsightsAtomFamily(hubInsights);
 
   return {
     configValueAtom,
@@ -1101,6 +1111,9 @@ export function createServerEnvironmentAtoms<R, E>(
     hubBoardLive,
     hubMergedProjects: hubMergedProjects.family,
     hubMergedProjectsEmpty: hubMergedProjects.empty,
+    hubInsights,
+    hubMergedInsights: hubMergedInsights.family,
+    hubMergedInsightsEmpty: hubMergedInsights.empty,
     // A cold transcript scan is measured in seconds, so keep the result around
     // long enough that switching windows or re-rendering does not rescan.
     usageSummary: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -1317,6 +1330,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.hubUpsertProject,
       concurrency: configConcurrency,
     }),
+    hubUpsertProjects: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubUpsertProjects",
+      tag: WS_METHODS.hubUpsertProjects,
+      concurrency: configConcurrency,
+    }),
     hubRecordTestVerdict: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:hubRecordTestVerdict",
       tag: WS_METHODS.hubRecordTestVerdict,
@@ -1355,6 +1373,17 @@ export function createServerEnvironmentAtoms<R, E>(
     hubRunAutopilot: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:hubRunAutopilot",
       tag: WS_METHODS.hubRunAutopilot,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    /** "Update from T3 Code": fetch-and-compare, then merge upstream/main and push. */
+    hubUpstreamStatus: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubUpstreamStatus",
+      tag: WS_METHODS.hubUpstreamStatus,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    hubUpstreamMerge: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:hubUpstreamMerge",
+      tag: WS_METHODS.hubUpstreamMerge,
       concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
     }),
     refreshUsageRates: createEnvironmentRpcCommand(runtime, {

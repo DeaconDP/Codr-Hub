@@ -2,23 +2,21 @@
 
 ## First checkout
 
-Install `vp` using the [root README](../../README.md#install-vp). The checkout requires Node 24;
-Bun is optional. From the repository root:
+Use the launcher from the [root README quick start](../../README.md#quick-start). It checks for
+Node 24, installs `vp` and dependencies, and serves the app on the sticky ports (web **5733**,
+server **13773**), reusing or restarting an instance it already started. Its data lives in the checkout's
+gitignored `.t3`, the same home the [fleet parent](codr-hub-fleet.md) uses. It never sets
+`VITE_HTTP_URL` or `VITE_WS_URL`.
+
+To run the stack yourself, install Node 24 and [`vp`](https://viteplus.dev/guide/), then from the
+repository root:
 
 ```sh
 vp i
 vp run dev
 ```
 
-Or double-click `run.command` (macOS) / `run.bat` (Windows). Those scripts install
-`vp` if needed, run `vp i` when `node_modules` is missing or stale, start
-`npm run dev` on the sticky ports (web **5733**, server **13773**), and open
-http://localhost:5733. On macOS they hand off to the shared `dale` tmux window
-`codr-hub`. They never set `VITE_HTTP_URL` or `VITE_WS_URL`. If this checkout
-already owns those ports, they only open the URL.
-
-Open the pairing URL printed by the dev runner. The bare origin does not authenticate
-a new browser.
+Open the pairing URL printed by the dev runner. The bare origin does not authenticate a new browser.
 
 Prefer a container? See [Dev container](../internals/devcontainer.md) for VS Code and Codespaces setup.
 

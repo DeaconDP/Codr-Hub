@@ -1,6 +1,7 @@
 import {
   type DeviceListInput,
   AuthAccessReadScope,
+  AuthAccessWriteScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
@@ -100,6 +101,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.hubBoardSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.hubBoardApply]: AuthOrchestrationOperateScope,
   [WS_METHODS.hubUpsertProject]: AuthOrchestrationOperateScope,
+  [WS_METHODS.hubUpsertProjects]: AuthOrchestrationOperateScope,
   [WS_METHODS.hubRecordTestVerdict]: AuthOrchestrationOperateScope,
   [WS_METHODS.hubDeleteProject]: AuthOrchestrationOperateScope,
   [WS_METHODS.hubSetStrategy]: AuthOrchestrationOperateScope,
@@ -109,6 +111,10 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.hubSync]: AuthOrchestrationOperateScope,
   [WS_METHODS.hubRunAutopilot]: AuthOrchestrationOperateScope,
   [WS_METHODS.hubLinkTailnet]: AuthOrchestrationReadScope,
+  [WS_METHODS.hubInsights]: AuthOrchestrationReadScope,
+  // Admin-only: rewrites and pushes the server's own source checkout.
+  [WS_METHODS.hubUpstreamStatus]: AuthAccessReadScope,
+  [WS_METHODS.hubUpstreamMerge]: AuthAccessWriteScope,
   [WS_METHODS.cloudGetRelayClientStatus]: AuthRelayReadScope,
   [WS_METHODS.cloudInstallRelayClient]: AuthRelayWriteScope,
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,

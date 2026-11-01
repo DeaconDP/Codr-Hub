@@ -308,6 +308,8 @@ import {
   HubError,
   HubImportInput,
   HubImportResult,
+  HubInsights,
+  HubInsightsInput,
   HubLinkTailnetInput,
   HubLinkTailnetResult,
   HubOk,
@@ -322,8 +324,15 @@ import {
   HubSyncStatus,
   HubUpdateSettingsInput,
   HubUpsertProjectInput,
+  HubUpsertProjectsInput,
 } from "./codrHub.ts";
 import { HubBoardCommand, HubBoardSnapshot, HubBoardSubscribeInput } from "./codrHubBoard.ts";
+import {
+  HubUpstreamMergeInput,
+  HubUpstreamMergeResult,
+  HubUpstreamStatus,
+  HubUpstreamStatusInput,
+} from "./codrHubUpstream.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
   ScheduledTaskDeleteInput,
@@ -502,6 +511,7 @@ export const WS_METHODS = {
   hubBoardSubscribe: "hub.board.subscribe",
   hubBoardApply: "hub.board.apply",
   hubUpsertProject: "hub.upsertProject",
+  hubUpsertProjects: "hub.upsertProjects",
   hubRecordTestVerdict: "hub.recordTestVerdict",
   hubDeleteProject: "hub.deleteProject",
   hubSetStrategy: "hub.setStrategy",
@@ -511,6 +521,9 @@ export const WS_METHODS = {
   hubSync: "hub.sync",
   hubRunAutopilot: "hub.runAutopilot",
   hubLinkTailnet: "hub.linkTailnet",
+  hubInsights: "hub.insights",
+  hubUpstreamStatus: "hub.upstream.status",
+  hubUpstreamMerge: "hub.upstream.merge",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -1729,6 +1742,11 @@ const WsHubUpsertProjectRpc = Rpc.make(WS_METHODS.hubUpsertProject, {
   success: HubOk,
   error: HubRpcError,
 });
+const WsHubUpsertProjectsRpc = Rpc.make(WS_METHODS.hubUpsertProjects, {
+  payload: HubUpsertProjectsInput,
+  success: HubOk,
+  error: HubRpcError,
+});
 const WsHubRecordTestVerdictRpc = Rpc.make(WS_METHODS.hubRecordTestVerdict, {
   payload: HubRecordTestVerdictInput,
   success: HubOk,
@@ -1772,6 +1790,21 @@ const WsHubRunAutopilotRpc = Rpc.make(WS_METHODS.hubRunAutopilot, {
 const WsHubLinkTailnetRpc = Rpc.make(WS_METHODS.hubLinkTailnet, {
   payload: HubLinkTailnetInput,
   success: HubLinkTailnetResult,
+  error: HubRpcError,
+});
+const WsHubInsightsRpc = Rpc.make(WS_METHODS.hubInsights, {
+  payload: HubInsightsInput,
+  success: HubInsights,
+  error: HubRpcError,
+});
+const WsHubUpstreamStatusRpc = Rpc.make(WS_METHODS.hubUpstreamStatus, {
+  payload: HubUpstreamStatusInput,
+  success: HubUpstreamStatus,
+  error: HubRpcError,
+});
+const WsHubUpstreamMergeRpc = Rpc.make(WS_METHODS.hubUpstreamMerge, {
+  payload: HubUpstreamMergeInput,
+  success: HubUpstreamMergeResult,
   error: HubRpcError,
 });
 
@@ -1864,6 +1897,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHubBoardSubscribeRpc,
   WsHubBoardApplyRpc,
   WsHubUpsertProjectRpc,
+  WsHubUpsertProjectsRpc,
   WsHubRecordTestVerdictRpc,
   WsHubDeleteProjectRpc,
   WsHubSetStrategyRpc,
@@ -1873,6 +1907,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsHubSyncRpc,
   WsHubRunAutopilotRpc,
   WsHubLinkTailnetRpc,
+  WsHubInsightsRpc,
+  WsHubUpstreamStatusRpc,
+  WsHubUpstreamMergeRpc,
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,

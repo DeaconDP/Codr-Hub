@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { AuthStandardClientScopes } from "./auth.ts";
+import { ProjectIconColor } from "./project.ts";
 import {
   EnvironmentId,
   IsoDateTime,
@@ -182,6 +183,10 @@ export const HubSettings = Schema.Struct({
   paceTargets: HubPaceTargets.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_HUB_PACE_TARGETS)),
   ),
+  /** Owner-picked machine colour per node name; unset nodes get an automatic one. */
+  nodeColors: Schema.Record(Schema.String, ProjectIconColor).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
 });
 export type HubSettings = typeof HubSettings.Type;
 
@@ -192,6 +197,7 @@ export const DEFAULT_HUB_SETTINGS: HubSettings = {
   autoDeployBankedResets: false,
   stagePrompts: {},
   paceTargets: DEFAULT_HUB_PACE_TARGETS,
+  nodeColors: {},
 };
 
 export const HubLaunchRecord = Schema.Struct({
@@ -291,6 +297,23 @@ export const HubSyncStatus = Schema.Struct({
 });
 export type HubSyncStatus = typeof HubSyncStatus.Type;
 
+/** This node's "Sync with T3": projects added, linked, skipped, and created in T3. */
+export const HubT3SyncResult = Schema.Struct({
+  imported: NonNegativeInt,
+  updated: NonNegativeInt,
+  skipped: NonNegativeInt,
+  created: NonNegativeInt,
+});
+export type HubT3SyncResult = typeof HubT3SyncResult.Type;
+
+export const HubT3SyncStatus = Schema.Struct({
+  enabled: Schema.Boolean,
+  lastSyncAt: Schema.NullOr(IsoDateTime),
+  lastResult: Schema.NullOr(HubT3SyncResult),
+  lastError: Schema.NullOr(Schema.String),
+});
+export type HubT3SyncStatus = typeof HubT3SyncStatus.Type;
+
 export const HubFleetPhase = Schema.Literals(["current", "waiting", "updating", "stuck"]);
 export type HubFleetPhase = typeof HubFleetPhase.Type;
 
@@ -314,6 +337,7 @@ export const HubSnapshot = Schema.Struct({
   sync: HubSyncStatus,
   deezProjectManagerPath: Schema.NullOr(Schema.String),
   fleet: Schema.optional(HubFleetReport),
+  t3Sync: Schema.optional(HubT3SyncStatus),
 });
 export type HubSnapshot = typeof HubSnapshot.Type;
 
@@ -465,6 +489,12 @@ export const HubUpsertProjectInput = Schema.Struct({
 });
 export type HubUpsertProjectInput = typeof HubUpsertProjectInput.Type;
 
+/** Several upserts in one portfolio commit, such as a manual reorder. */
+export const HubUpsertProjectsInput = Schema.Struct({
+  projects: Schema.Array(HubUpsertProjectInput).check(Schema.isMaxLength(500)),
+});
+export type HubUpsertProjectsInput = typeof HubUpsertProjectsInput.Type;
+
 export const HubDeleteProjectInput = Schema.Struct({ id: TrimmedNonEmptyString });
 export type HubDeleteProjectInput = typeof HubDeleteProjectInput.Type;
 
@@ -485,6 +515,8 @@ export const HubUpdateSettingsInput = Schema.Struct({
       codex: Schema.optional(HubPaceTarget),
     }),
   ),
+  /** Patch per node name; `null` returns that node to its automatic colour. */
+  nodeColors: Schema.optional(Schema.Record(Schema.String, Schema.NullOr(ProjectIconColor))),
 });
 
 export const HubRecordTestVerdictInput = Schema.Union([
@@ -504,20 +536,31 @@ export type HubUpdateSettingsInput = typeof HubUpdateSettingsInput.Type;
 export const HubSetNodeInput = Schema.Struct({
   nodeName: Schema.optional(TrimmedNonEmptyString),
   autopilotEnabled: Schema.optional(Schema.Boolean),
+  /** Keep this node's T3 projects and Hub checkouts in step automatically. */
+  syncT3: Schema.optional(Schema.Boolean),
 });
 export type HubSetNodeInput = typeof HubSetNodeInput.Type;
 
-export const HubImportInput = Schema.Struct({
-  source: Schema.Literal("deez-project-manager"),
-  /** Defaults to Deez-PM's app-data file on this machine. */
-  path: Schema.optional(TrimmedNonEmptyString),
-});
+export const HubImportInput = Schema.Union([
+  Schema.Struct({
+    source: Schema.Literal("deez-project-manager"),
+    /** Defaults to Deez-PM's app-data file on this machine. */
+    path: Schema.optional(TrimmedNonEmptyString),
+  }),
+  /**
+   * This node's T3 projects: links matching portfolio projects, adds the rest.
+   * With Sync with T3 on, also adds this node's Hub checkouts to T3.
+   */
+  Schema.Struct({ source: Schema.Literal("t3") }),
+]);
 export type HubImportInput = typeof HubImportInput.Type;
 
 export const HubImportResult = Schema.Struct({
   imported: NonNegativeInt,
   updated: NonNegativeInt,
   skipped: NonNegativeInt,
+  /** T3 projects created from Hub checkouts (Sync with T3 only). */
+  created: Schema.optional(NonNegativeInt),
 });
 export type HubImportResult = typeof HubImportResult.Type;
 
@@ -580,3 +623,64 @@ export class HubError extends Schema.TaggedError<HubError>()("HubError", {
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {}
+
+// --- dashboard insights ---------------------------------------------------------
+
+/** What a checkout is built with. Detected from tags first, then the checkout's files. */
+export const HubPlatform = Schema.Literals([
+  "unreal",
+  "unity",
+  "ios",
+  "android",
+  "web",
+  "desktop",
+  "python",
+  "rust",
+  "other",
+]);
+export type HubPlatform = typeof HubPlatform.Type;
+
+export const HUB_PLATFORM_LABELS: Record<HubPlatform, string> = {
+  unreal: "Unreal",
+  unity: "Unity",
+  ios: "iOS",
+  android: "Android",
+  web: "Web",
+  desktop: "Desktop",
+  python: "Python",
+  rust: "Rust",
+  other: "Other",
+};
+
+/** Dashboard activity windows. `ytd` starts on 1 January in the node's local time. */
+export const HubActivityWindow = Schema.Literals(["24h", "7d", "30d", "ytd", "all"]);
+export type HubActivityWindow = typeof HubActivityWindow.Type;
+
+export const HubActivityCounts = Schema.Struct({
+  "24h": NonNegativeInt,
+  "7d": NonNegativeInt,
+  "30d": NonNegativeInt,
+  ytd: NonNegativeInt,
+  all: NonNegativeInt,
+});
+export type HubActivityCounts = typeof HubActivityCounts.Type;
+
+/** One project's checkout on the answering node. Projects without a checkout are omitted. */
+export const HubProjectInsight = Schema.Struct({
+  projectId: TrimmedNonEmptyString,
+  platform: HubPlatform,
+  /** Commits on HEAD per window. All windows ship together so switching is instant. */
+  commits: HubActivityCounts,
+  lastCommitAt: Schema.NullOr(IsoDateTime),
+});
+export type HubProjectInsight = typeof HubProjectInsight.Type;
+
+export const HubInsightsInput = Schema.Struct({});
+export type HubInsightsInput = typeof HubInsightsInput.Type;
+
+export const HubInsights = Schema.Struct({
+  nodeName: Schema.String,
+  computedAt: IsoDateTime,
+  projects: Schema.Array(HubProjectInsight),
+});
+export type HubInsights = typeof HubInsights.Type;

@@ -7,11 +7,18 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import type {
+  ApplicationStoredEvent,
+  OrchestrationProjectShell,
+  Project,
+} from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as OrchestrationEventStore from "../persistence/Services/OrchestrationEventStore.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
@@ -20,14 +27,18 @@ import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Hub from "./CodrHubService.ts";
 import * as Store from "./portfolioStore.ts";
 
-const serviceLayer = (baseDir: string) =>
+const serviceLayer = (
+  baseDir: string,
+  projects: Partial<ProjectService.ProjectService["Service"]> = {},
+  applicationEvents: Stream.Stream<ApplicationStoredEvent> = Stream.never,
+) =>
   Hub.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         ServerConfig.layerTest(process.cwd(), baseDir),
         Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
         Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({}),
-        Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(ProjectService.ProjectService)(projects),
         Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
         Layer.mock(ThreadManagementService.ThreadManagementService)({
           getShellSnapshot: () =>
@@ -39,6 +50,11 @@ const serviceLayer = (baseDir: string) =>
             }),
         }),
         Layer.mock(Scheduler.Scheduler)({ register: () => Effect.void }),
+        Layer.mock(OrchestrationEventStore.OrchestrationEventStore)({
+          latestApplicationSequence: Effect.succeed(0),
+          streamProjectedApplicationEvents: ({ project }) =>
+            applicationEvents.pipe(Stream.map(project)),
+        }),
       ),
     ),
   );
@@ -85,6 +101,155 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
         expect(saved?.priority).toBe("critical");
         expect(saved?.notes).toBe("Keep these notes");
         expect((yield* snapshot(hub)).projects[0]?.project).toEqual(saved);
+      }).pipe(Effect.provide(serviceLayer(baseDir)));
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
+  it.effect("applies a batch upsert as one portfolio commit", () =>
+    Effect.gen(function* () {
+      const { baseDir, paths } = yield* fixture;
+      yield* Effect.gen(function* () {
+        const hub = yield* Hub.CodrHubService;
+        yield* hub.upsertProject({ name: "Alpha" });
+        const before = yield* Store.git(paths.portfolioDir, ["rev-list", "--count", "HEAD"]);
+        yield* hub.upsertProjects({
+          projects: [
+            { id: "alpha", sortIndex: 1 },
+            { name: "Beta", localPath: "/work/beta", sortIndex: 0, favorite: true },
+          ],
+        });
+        const after = yield* Store.git(paths.portfolioDir, ["rev-list", "--count", "HEAD"]);
+        expect(Number(after.stdout) - Number(before.stdout)).toBe(1);
+        const saved = new Map((yield* Store.readProjects(paths)).map((p) => [p.id, p]));
+        expect(saved.get("alpha")?.sortIndex).toBe(1);
+        expect(saved.get("beta")).toMatchObject({ sortIndex: 0, favorite: true, autonomy: 0 });
+        expect(Object.values(saved.get("beta")?.hosts ?? {})).toEqual([{ path: "/work/beta" }]);
+      }).pipe(Effect.provide(serviceLayer(baseDir)));
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
+  it.effect("rejects the whole batch when one upsert is invalid", () =>
+    Effect.gen(function* () {
+      const { baseDir, paths } = yield* fixture;
+      yield* Effect.gen(function* () {
+        const hub = yield* Hub.CodrHubService;
+        const result = yield* hub
+          .upsertProjects({ projects: [{ name: "Gamma" }, { id: "missing", favorite: true }] })
+          .pipe(Effect.flip);
+        expect(result.message).toContain("missing");
+        expect(yield* Store.readProjects(paths)).toEqual([]);
+      }).pipe(Effect.provide(serviceLayer(baseDir)));
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
+  it.effect("imports this node's T3 projects once", () =>
+    Effect.gen(function* () {
+      const { baseDir, paths } = yield* fixture;
+      const shell = (title: string, workspaceRoot: string) =>
+        ({ title, workspaceRoot, repositoryIdentity: null }) as OrchestrationProjectShell;
+      const listShells = () =>
+        Effect.succeed([shell("Alpha", "/work/alpha"), shell("Beta", "/work/beta")]);
+      yield* Effect.gen(function* () {
+        const hub = yield* Hub.CodrHubService;
+        yield* hub.upsertProject({ name: "Alpha" });
+        expect(yield* hub.importProjects({ source: "t3" })).toEqual({
+          imported: 1,
+          updated: 1,
+          skipped: 0,
+          created: 0,
+        });
+        expect(yield* hub.importProjects({ source: "t3" })).toEqual({
+          imported: 0,
+          updated: 0,
+          skipped: 2,
+          created: 0,
+        });
+        const saved = (yield* Store.readProjects(paths)).map((p) => [p.id, Object.values(p.hosts)]);
+        expect(saved).toEqual([
+          ["alpha", [{ path: "/work/alpha" }]],
+          ["beta", [{ path: "/work/beta" }]],
+        ]);
+      }).pipe(Effect.provide(serviceLayer(baseDir, { listShells })));
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
+  it.effect("syncs with T3 both ways on enable and on each T3 project event", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { baseDir, paths } = yield* fixture;
+      const checkout = path.join(baseDir, "hub-only");
+      yield* fs.makeDirectory(checkout, { recursive: true });
+      const shell = (title: string, workspaceRoot: string) =>
+        ({ title, workspaceRoot, repositoryIdentity: null }) as OrchestrationProjectShell;
+      const shells = [shell("Alpha", "/work/alpha")];
+      const created: Array<{ title: string; workspaceRoot: string }> = [];
+      const events = yield* Queue.unbounded<ApplicationStoredEvent>();
+      const projects: Partial<ProjectService.ProjectService["Service"]> = {
+        listShells: () => Effect.sync(() => [...shells]),
+        getByWorkspaceRoot: () => Effect.succeed(Option.none()),
+        create: (input) =>
+          Effect.sync(() => {
+            created.push({ title: input.title, workspaceRoot: input.workspaceRoot });
+            shells.push(shell(input.title, input.workspaceRoot));
+            return { id: input.projectId, title: input.title } as Project;
+          }),
+      };
+      yield* Effect.gen(function* () {
+        const hub = yield* Hub.CodrHubService;
+        yield* hub.upsertProject({ name: "Hub Only", localPath: checkout });
+        expect((yield* snapshot(hub)).t3Sync?.enabled).toBe(false);
+
+        yield* hub.setNode({ syncT3: true });
+        const first = yield* hub.subscribe().pipe(
+          Stream.filter((next) => next.t3Sync?.lastResult != null),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
+        expect(first.t3Sync).toMatchObject({
+          enabled: true,
+          lastError: null,
+          lastResult: { imported: 1, updated: 0, skipped: 0, created: 1 },
+        });
+        expect(created).toEqual([{ title: "Hub Only", workspaceRoot: checkout }]);
+        expect((yield* Store.readNodeFile(paths)).syncT3).toBe(true);
+
+        shells.push(shell("Beta", "/work/beta"));
+        yield* Queue.offer(events, {
+          aggregateKind: "project",
+          aggregateId: "beta",
+          type: "project.created",
+          sequence: 1,
+        } as unknown as ApplicationStoredEvent);
+        const second = yield* hub.subscribe().pipe(
+          Stream.filter((next) => next.projects.some((view) => view.project.id === "beta")),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
+        expect(second.t3Sync?.lastResult).toEqual({
+          imported: 1,
+          updated: 0,
+          skipped: 2,
+          created: 0,
+        });
+        expect(created).toHaveLength(1);
+        expect((yield* Store.readProjects(paths)).map((project) => project.id).toSorted()).toEqual([
+          "alpha",
+          "beta",
+          "hub-only",
+        ]);
+      }).pipe(Effect.provide(serviceLayer(baseDir, projects, Stream.fromQueue(events))));
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
+  it.effect("patches machine colours per node", () =>
+    Effect.gen(function* () {
+      const { baseDir, paths } = yield* fixture;
+      yield* Effect.gen(function* () {
+        const hub = yield* Hub.CodrHubService;
+        yield* hub.updateSettings({ nodeColors: { Steve: "teal", Ada: "red" } });
+        yield* hub.updateSettings({ nodeColors: { Ada: null } });
+        expect((yield* Store.readHubFile(paths)).settings.nodeColors).toEqual({ Steve: "teal" });
       }).pipe(Effect.provide(serviceLayer(baseDir)));
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
@@ -293,6 +458,48 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
 
         yield* hub.deleteProject({ id: "boarded" });
         expect(yield* Store.readTasks(paths)).toEqual([]);
+      }).pipe(Effect.provide(serviceLayer(baseDir)));
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
+  it.effect("reports platform and commit activity for this node's checkouts", () =>
+    Effect.gen(function* () {
+      const { baseDir } = yield* fixture;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const game = path.join(baseDir, "game");
+      const site = path.join(baseDir, "site");
+      yield* fs.makeDirectory(game);
+      yield* fs.makeDirectory(site);
+      yield* fs.writeFileString(path.join(game, "Game.uproject"), "{}");
+      yield* fs.writeFileString(path.join(site, "package.json"), "{}");
+      const commit = ["-c", "user.name=Hub", "-c", "user.email=hub@example.com", "commit"];
+      yield* Store.git(game, ["init", "--quiet", "-b", "main"]);
+      yield* Store.git(game, ["add", "."]);
+      yield* Store.git(game, [...commit, "--quiet", "-m", "one"]);
+      yield* Store.git(game, [...commit, "--quiet", "--allow-empty", "-m", "two"]);
+      yield* Effect.gen(function* () {
+        const hub = yield* Hub.CodrHubService;
+        yield* hub.upsertProjects({
+          projects: [
+            { name: "Game", localPath: game, tags: ["Web"] },
+            { name: "Site", localPath: site },
+            { name: "Gone", localPath: path.join(baseDir, "missing") },
+          ],
+        });
+        const result = yield* hub.insights();
+        const byId = new Map(result.projects.map((insight) => [insight.projectId, insight]));
+        expect([...byId.keys()].toSorted()).toEqual(["game", "site"]);
+        expect(byId.get("game")).toMatchObject({
+          platform: "unreal",
+          commits: { "24h": 2, "7d": 2, "30d": 2, ytd: 2, all: 2 },
+        });
+        expect(byId.get("game")?.lastCommitAt).not.toBeNull();
+        expect(byId.get("site")).toMatchObject({
+          platform: "web",
+          commits: { "24h": 0, all: 0 },
+          lastCommitAt: null,
+        });
       }).pipe(Effect.provide(serviceLayer(baseDir)));
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );

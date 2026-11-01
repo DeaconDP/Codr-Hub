@@ -6,6 +6,7 @@ import {
   mergedProjectLastLaunchAt,
   projectMatchesLane,
   type HubAutonomy,
+  type HubImportResult,
   type HubLane,
   type HubMergedProjectView,
   type HubNodeCheckout,
@@ -185,4 +186,16 @@ export function newStrategyId(title: string, random: string) {
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
   return `${slug || "priority"}-${random.slice(0, 6)}`;
+}
+
+/** One line for a T3 import or sync result; zero counts are left out. */
+export function t3SyncSummary(result: HubImportResult): string {
+  const parts = [
+    result.imported > 0 ? `added ${result.imported}` : null,
+    result.updated > 0 ? `linked ${result.updated}` : null,
+    (result.created ?? 0) > 0 ? `added ${result.created} to T3` : null,
+  ].filter((part) => part !== null);
+  if (parts.length === 0) return "Already in step with T3.";
+  const text = parts.join(", ");
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
 }

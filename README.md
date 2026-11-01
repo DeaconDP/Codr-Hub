@@ -1,4 +1,27 @@
-# T3 Code
+# Codr-Hub
+
+Codr-Hub is a soft fork of [T3 Code](https://github.com/pingdotgg/t3code) that adds a **Hub**: a ranked portfolio of your projects shared across your machines, and an autopilot that spends your agent subscriptions on the projects that matter most.
+
+## Quick start
+
+1. Install at least one agent CLI and sign in with your subscription, not an API key: `claude auth login`, `codex login`, or `agent login` (Cursor).
+2. Install [Node 24](https://nodejs.org) (or have nvm, and the launcher installs it). Clone this repository, then double-click `run.command` (macOS, Linux) or `run.bat` (Windows). The first run installs everything else and opens a signed-in browser at http://localhost:5733.
+3. Open **Hub** from the sidebar and click **Import from T3** (or **Import from Deez-PM**).
+4. In Hub settings, set **Portfolio git remote** to your private portfolio repository and click **Save & sync**. Use the same remote on every machine.
+5. Optional: run `npm run codr:always-on` to keep this machine's Hub running and updated, and `npm run codr:phone` to install the iPhone app from a Mac.
+
+Run the launcher again any time to reopen the app. To sign in another browser, open the **Pairing URL** shown in the launcher window.
+
+- [Codr-Hub guide](./docs/user/codr-hub.md): first run, autonomy, pacing, sharing across machines
+- [Always-on machines](./docs/operations/codr-hub-fleet.md)
+- [Phone app](./apps/mobile/README.md#physical-iphone)
+- [Developing Codr-Hub](./docs/operations/development.md)
+
+---
+
+# Upstream T3 Code
+
+The rest of this README is upstream T3 Code's. Its install commands install T3 Code, not Codr-Hub.
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 
@@ -103,31 +126,7 @@ Building from source? Start at [docs/internals/overview.md](./docs/internals/ove
 
 ## If you REALLY want to contribute still.... read this first
 
-### Install `vp`
-
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
-
-```bash
-curl -fsSL https://vite.plus | bash
-```
-
-#### Windows
-
-```bash
-irm https://vite.plus/ps1 | iex
-```
-
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
-
-```bash
-vp i
-```
-
-On this Codr-Hub fork, double-click `run.command` (macOS) or `run.bat` (Windows) to install `vp` if needed, run `vp i`, start the sticky-port stack at http://localhost:5733, and open a browser.
+To build from source, use the launcher in the [Quick start](#quick-start).
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
 

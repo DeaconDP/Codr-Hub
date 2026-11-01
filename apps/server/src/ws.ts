@@ -121,6 +121,7 @@ import * as IdAllocator from "./orchestration-v2/IdAllocator.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as CodrHub from "./codrHub/CodrHubService.ts";
 import { linkTailnet } from "./codrHub/tailnetMesh.ts";
+import { upstreamSync } from "./codrHub/upstreamSync.ts";
 import {
   archivedShellStreamItemFromThreadShell,
   buildActiveShellSnapshot,
@@ -2100,6 +2101,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.hubUpsertProject, codrHub.upsertProject(input), {
             "rpc.aggregate": "codrHub",
           }),
+        [WS_METHODS.hubUpsertProjects]: (input) =>
+          observeRpcEffect(WS_METHODS.hubUpsertProjects, codrHub.upsertProjects(input), {
+            "rpc.aggregate": "codrHub",
+          }),
         [WS_METHODS.hubRecordTestVerdict]: (input) =>
           observeRpcEffect(WS_METHODS.hubRecordTestVerdict, codrHub.recordTestVerdict(input), {
             "rpc.aggregate": "codrHub",
@@ -2134,6 +2139,18 @@ const makeWsRpcLayer = (
           }),
         [WS_METHODS.hubLinkTailnet]: (_input) =>
           observeRpcEffect(WS_METHODS.hubLinkTailnet, linkTailnet(), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubInsights]: (_input) =>
+          observeRpcEffect(WS_METHODS.hubInsights, codrHub.insights(), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubUpstreamStatus]: (_input) =>
+          observeRpcEffect(WS_METHODS.hubUpstreamStatus, upstreamSync.status(), {
+            "rpc.aggregate": "codrHub",
+          }),
+        [WS_METHODS.hubUpstreamMerge]: (_input) =>
+          observeRpcEffect(WS_METHODS.hubUpstreamMerge, upstreamSync.merge(), {
             "rpc.aggregate": "codrHub",
           }),
         [WS_METHODS.serverProbe]: (_input) =>

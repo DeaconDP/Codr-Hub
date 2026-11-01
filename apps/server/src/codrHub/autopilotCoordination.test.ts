@@ -25,6 +25,7 @@ import * as ServerConfig from "../config.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import * as OrchestrationEventStore from "../persistence/Services/OrchestrationEventStore.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
@@ -268,6 +269,10 @@ const nodeHarness = (baseDir: string, initialProviders: ReadonlyArray<ServerProv
                 Effect.mapError((cause) => new HubError({ message: "Scheduler failed", cause })),
               );
             }),
+        }),
+        Layer.mock(OrchestrationEventStore.OrchestrationEventStore)({
+          latestApplicationSequence: Effect.succeed(0),
+          streamProjectedApplicationEvents: () => Stream.never,
         }),
       ),
     ),

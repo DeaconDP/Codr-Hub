@@ -65,6 +65,13 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 
 - [x] One-click `run.command` / `run.bat` (Node 24, `vp i`, sticky http://localhost:5733)
 
+## Setup simplification
+
+- [x] README.md: Codr-Hub section and five-step Quick start on top; upstream T3 content kept below under "Upstream T3 Code"
+- [x] `docs/user/codr-hub.md`: "Getting started" is the one first-run walkthrough, linking to deeper sections
+- [x] Development "First checkout", fleet ops doc, and mobile README lead with the launcher and `npm run codr:*` scripts
+- [ ] Owner: set up a fresh machine from the README Quick start alone and note any step that needed more
+
 ## E3: Per-project kanban (in progress)
 
 - [x] Contracts: HubTask, columns, HubBoardSnapshot, HubBoardCommand + board RPCs
@@ -106,7 +113,7 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] `scripts/codr-hub-fleet/` parent: fetch, fast-forward, install, idle restart via explicit home
 - [x] `codrHub/fleetDecide.ts`, `fleetLogin.ts`; HubFleetReport in snapshot
 - [x] Ops doc `docs/operations/codr-hub-fleet.md`
-- [ ] Owner: arm on each node (`node scripts/codr-hub-fleet/parent.ts --arm`) and watch one fast-forward
+- [ ] Owner: arm on each node (`npm run codr:always-on`) and watch one fast-forward
 
 ## Mobile build (uncommitted)
 
@@ -119,6 +126,29 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [ ] Commit in slices (contracts first) so codr-hub/v0.1 builds clean
 - [ ] Rebase PR #4/#5 onto those commits (committed CodrHubService imports modelPolicy/testHandoff/fleetDecide)
 
+## Project picker (uncommitted)
+
+- [x] Contracts: `HubSettings.nodeColors`, per-node colour patch, `hub.upsertProjects` batch
+- [x] Server: shared upsert step; batch lands as one commit (3 new tests)
+- [x] Web: `HubProjectPicker` in the new-thread hero: favourites, tags + tag filter, search, drag / Alt+↑/↓ reorder, rename, colour-coded machine icons, Machine colours dialog
+- [x] `projectPickerModel.ts` linking / ordering / reorder plan (9 tests); web, server, contracts, client-runtime typecheck; targeted lint
+- [ ] Browser pass with owner go-ahead: picker at desktop and ~390px, drag, rename, tags, colours across two nodes
+
+## Import from T3 (uncommitted)
+
+- [x] `hub.import` source `t3`: pure `codrHub/t3Import.ts` links by path, then repo, then name; fills missing checkouts; adds the rest at autonomy 0 (5 new tests)
+- [x] Web: **Import from T3** beside **Import from Deez-PM** in the Projects table
+- [ ] Owner: Import from T3 on each node and check nothing is duplicated
+
+## Sync with T3 (uncommitted)
+
+- [x] Per-node `syncT3` in `node.json`, set through `hub.setNode`; snapshot carries `t3Sync` (enabled, last run, result, error)
+- [x] Server: while on, watches committed T3 project events (no polling), coalesces bursts, runs the T3 merge under the write lock; runs once on startup and when turned on
+- [x] Server: adds this node's live, unarchived Hub checkouts to T3 via `ProjectService.create`; skips roots T3 already knows or the owner removed; never deletes
+- [x] Pure `planT3Creates` in `codrHub/t3Import.ts` (2 tests); service test for enable + event-driven sync
+- [x] Web: **Sync with T3** switch in Hub settings; **Import from T3** reads **Sync now** while on, last sync result above the list
+- [ ] Owner: turn on Sync with T3 on each node; add a project in T3 and a checkout in the Hub, check both appear once
+
 ## Next engineering slice
 
 - [x] E2: merge the Hub project view across connected environments
@@ -126,3 +156,17 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] E9: Hub running badge, one visibility-gated shine per active project
 - [x] E9: chat live-row enter / complete / fail cues (`apps/web/src/codrHub/liveStageCue.ts`, 4 tests), web typecheck, targeted lint
 - [ ] Owner: check E9 by hand on a high-refresh display (live shine, offscreen and hidden-tab pause, Reduce motion, one Hub badge per job)
+
+## Hub dashboard
+
+- [x] `hub.insights` RPC: per-node platform detection (tags + checkout files) and commit counts for 24h / 7d / 30d / YTD / all, cached 5 min
+- [x] `/hub/dashboard`: treemap grouped by machine, sized by importance or activity, coloured by platform, with a platform filter
+- [ ] Owner: open Hub → Dashboard on desktop and phone; check platform detection on Unreal/Unity/iOS checkouts and correct tags where it's wrong
+
+## Upstream update (uncommitted)
+
+- [x] `codrHub/upstreamSync.ts`: fetch `upstream`, behind/ahead/clean status; merge `upstream/main`, abort on conflict with file list, push to `origin` (no force); serialized
+- [x] `hub.upstream.status` / `hub.upstream.merge` RPCs, admin scopes (`access:read` / `access:write`)
+- [x] Hub settings: **Update from T3 Code** row (Check, Merge & push, blocker reason, conflict list)
+- [x] Temp-repo tests: behind count, merge + push, conflict aborted, dirty refused, unavailable (5)
+- [ ] Owner: Check and Merge & push from the desktop startup link; watch a fleet node fast-forward
