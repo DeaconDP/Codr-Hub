@@ -23,6 +23,10 @@ Run the launcher again any time to reopen the app. To sign in another browser, o
 
 The rest of this README is upstream T3 Code's. Its install commands install T3 Code, not Codr-Hub.
 
+> **Codr-Hub** is a fork of T3 Code with its own look (the default **Codr** theme) and project management on top: favorite and prioritize projects from the sidebar project picker (or right-click a project folder), and sort projects by name in Settings. Favorites and priority are saved per client.
+>
+> Pull in the latest T3 Code with `vp run sync:t3` (fetches `upstream` and merges `upstream/main`). Codr additions live in `codrProjectPrefs.ts` and `CodrProjectMarks.tsx` to keep merges small.
+
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, and fx. If they're set up on your computer, T3 Code can control them.

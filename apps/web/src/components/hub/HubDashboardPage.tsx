@@ -10,12 +10,12 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { isElectron } from "../../env";
-import { useEscapeToGoBack } from "../../hooks/useNavigateBack";
+import { useEscapeToGoBack } from "./useEscapeToGoBack";
 import { projectIconColorClassName } from "../../projectIconColors";
 import { useEnvironments } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
-import { useRelativeTimeTick } from "../settings/settingsLayout";
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { SidebarInset } from "../ui/sidebar";
@@ -135,7 +135,7 @@ function layoutDashboard(dashboard: HubDashboard, width: number, height: number)
 /** Codr-Hub: every project as a treemap, grouped by machine and coloured by platform. */
 export function HubDashboardPage() {
   useEscapeToGoBack();
-  useRelativeTimeTick(60_000);
+  useNowMinute();
   const { environments } = useEnvironments();
   const connected = environments.filter(
     (environment) =>

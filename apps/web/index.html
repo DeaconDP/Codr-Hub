@@ -51,6 +51,20 @@
         // Keep this small boot-time copy in sync with the built-in palettes so
         // the selected theme is visible before the app has mounted.
         const BUILT_IN_THEME_PALETTES = {
+          codr: {
+            light: {
+              background: "oklch(0.985 0.003 255)",
+              foreground: "oklch(0.21 0.015 255)",
+              accent: "oklch(0.52 0.14 140)",
+              chrome: "oklch(0.985 0.003 255)",
+            },
+            dark: {
+              background: "oklch(0.175 0.012 255)",
+              foreground: "oklch(0.96 0.006 255)",
+              accent: "oklch(0.87 0.19 128)",
+              chrome: "oklch(0.175 0.012 255)",
+            },
+          },
           "t3-chat": {
             light: {
               background: "oklch(0.982446 0.010114 325.653)",
@@ -132,6 +146,7 @@
           "system",
           "light",
           "dark",
+          "codr",
           "t3-chat",
           "grove",
           "ocean",
@@ -224,7 +239,7 @@
           };
           const isLegacyT3ChatDark = storedTheme === "t3-chat-dark";
           const themeId =
-            storedTheme === null ? "" : (LEGACY_THEME_IDS[storedTheme] ?? storedTheme);
+            storedTheme === null ? "codr" : (LEGACY_THEME_IDS[storedTheme] ?? storedTheme);
           const legacyMode = isLegacyT3ChatDark ? "dark" : null;
           const builtInModes = BUILT_IN_THEME_MODES[themeId] ?? null;
           const customTheme = builtInModes ? null : findCustomTheme(themeId);

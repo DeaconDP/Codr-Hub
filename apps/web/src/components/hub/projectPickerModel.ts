@@ -5,7 +5,7 @@ import type {
   ProjectIconColor,
 } from "@t3tools/contracts";
 
-import { normalizeProjectPathForComparison } from "~/lib/projectPaths";
+import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
 
 /**
  * Codr-Hub new-thread project picker. Favourites, tags and manual order live

@@ -128,6 +128,13 @@ import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOrderWhileOpen } from "../hooks/useOrderWhileOpen";
 import { useProjectPin } from "../hooks/useProjectGroupUpdate";
 import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
+import {
+  PROJECT_PRIORITIES,
+  PROJECT_PRIORITY_LABELS,
+  projectPriority,
+  useCodrProjectPrefs,
+} from "../codrProjectPrefs";
+import { ProjectMarkButtons } from "./sidebar/CodrProjectMarks";
 import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
@@ -1268,6 +1275,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     (group: SidebarProjectSnapshot, position: { x: number; y: number }) => {
       const api = readLocalApi();
       if (!api) return;
+      const prefs = useCodrProjectPrefs.getState();
+      const priority = projectPriority(prefs.priorities, group.projectKey);
       void (async () => {
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
@@ -1281,13 +1290,42 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       : { id: "pin", label: "Pin project", icon: "pin" },
                   ]
                 : []),
-              { id: "project-settings", label: "Project settings", icon: "settings" },
+              {
+                id: "favorite",
+                label: prefs.favorites.includes(group.projectKey) ? "Unfavorite" : "Favorite",
+                separatorBefore: true,
+              },
+              {
+                id: "priority",
+                label: "Priority",
+                children: PROJECT_PRIORITIES.map((value) => ({
+                  id: `priority:${value}`,
+                  label: PROJECT_PRIORITY_LABELS[value],
+                  checked: value === priority,
+                })),
+              },
+              {
+                id: "project-settings",
+                label: "Project settings",
+                icon: "settings",
+                separatorBefore: true,
+              },
             ],
             position,
           ),
         );
         if (clicked._tag === "Failure") return;
+        const priorityChoice = PROJECT_PRIORITIES.find(
+          (value) => clicked.value === `priority:${value}`,
+        );
+        if (priorityChoice) {
+          useCodrProjectPrefs.getState().setPriority(group.projectKey, priorityChoice);
+          return;
+        }
         switch (clicked.value) {
+          case "favorite":
+            useCodrProjectPrefs.getState().toggleFavorite(group.projectKey);
+            return;
           case "new-thread":
             startThreadInProjectFolder(group);
             return;
@@ -3149,6 +3187,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 pinned={project.pinned}
                                 shortcutLabel={shortcutLabelForCommand(keybindings, "thread.pin")}
                                 onToggle={() => toggleProjectGroupPin(project)}
+                              />
+                            ) : null}
+                            {project ? (
+                              <ProjectMarkButtons
+                                projectKey={project.projectKey}
+                                projectName={project.displayName}
                               />
                             ) : null}
                             {project ? (
