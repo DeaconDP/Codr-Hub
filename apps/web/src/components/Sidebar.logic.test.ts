@@ -740,6 +740,9 @@ describe("sortProjectsForSidebar", () => {
       ProjectId.make("project-2"),
       ProjectId.make("project-1"),
     ]);
+    expect(
+      sortProjectsForSidebar(projects, threads, "name").map((project) => project.title),
+    ).toEqual(["Newer project", "Older project"]);
   });
 });
 

@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { CheckIcon } from "lucide-react";
+import { CODR_THEME } from "@t3tools/shared/themePalettes";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import {
@@ -118,6 +119,7 @@ const RESPONSE_STREAMING_MODE_DESCRIPTIONS: Record<ResponseStreamingMode, string
 const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
   created_at: "Created at",
+  name: "Name",
   manual: "Manual",
 };
 const isSidebarProjectSortOrder = Schema.is(SidebarProjectSortOrder);
@@ -572,7 +574,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       previousTheme = readThemePreference();
     } catch {}
     const liveHalves = readThemeHalves();
-    const needsThemeReset = previousTheme !== "system";
+    const needsThemeReset = previousTheme !== CODR_THEME.id;
     const needsMixReset = liveHalves !== null;
     const needsFollowSystemReset = readAppearanceModePreference(previousTheme) !== "system";
     const notifyThemeRestoreFailure = () => {
@@ -591,7 +593,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       if (previousHalves?.light) setThemeHalf("light", previousHalves.light);
       if (previousHalves?.dark) setThemeHalf("dark", previousHalves.dark);
     };
-    if (needsThemeReset && !setTheme("system")) {
+    if (needsThemeReset && !setTheme(CODR_THEME.id)) {
       notifyThemeRestoreFailure();
       return;
     }

@@ -122,6 +122,13 @@ import {
 } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
+import {
+  PROJECT_PRIORITIES,
+  PROJECT_PRIORITY_LABELS,
+  projectPriority,
+  useCodrProjectPrefs,
+} from "../codrProjectPrefs";
+import { ProjectMarkButtons } from "./sidebar/CodrProjectMarks";
 import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
@@ -1210,19 +1217,50 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     (group: SidebarProjectSnapshot, position: { x: number; y: number }) => {
       const api = readLocalApi();
       if (!api) return;
+      const prefs = useCodrProjectPrefs.getState();
+      const priority = projectPriority(prefs.priorities, group.projectKey);
       void (async () => {
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             [
               { id: "new-thread", label: "New thread" },
               { id: "copy-path", label: "Copy path" },
-              { id: "project-settings", label: "Project settings", icon: "settings" },
+              {
+                id: "favorite",
+                label: prefs.favorites.includes(group.projectKey) ? "Unfavorite" : "Favorite",
+                separatorBefore: true,
+              },
+              {
+                id: "priority",
+                label: "Priority",
+                children: PROJECT_PRIORITIES.map((value) => ({
+                  id: `priority:${value}`,
+                  label: PROJECT_PRIORITY_LABELS[value],
+                  checked: value === priority,
+                })),
+              },
+              {
+                id: "project-settings",
+                label: "Project settings",
+                icon: "settings",
+                separatorBefore: true,
+              },
             ],
             position,
           ),
         );
         if (clicked._tag === "Failure") return;
+        const priorityChoice = PROJECT_PRIORITIES.find(
+          (value) => clicked.value === `priority:${value}`,
+        );
+        if (priorityChoice) {
+          useCodrProjectPrefs.getState().setPriority(group.projectKey, priorityChoice);
+          return;
+        }
         switch (clicked.value) {
+          case "favorite":
+            useCodrProjectPrefs.getState().toggleFavorite(group.projectKey);
+            return;
           case "new-thread":
             startThreadInProjectFolder(group);
             return;
@@ -3041,6 +3079,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 group={project}
                                 primaryEnvironmentId={primaryEnvironmentId}
                                 machineByEnvironmentId={environmentMachineById}
+                              />
+                            ) : null}
+                            {project ? (
+                              <ProjectMarkButtons
+                                projectKey={project.projectKey}
+                                projectName={project.displayName}
                               />
                             ) : null}
                             {project ? (

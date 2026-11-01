@@ -13,6 +13,9 @@ where vp >nul 2>&1 || (
 )
 where vp >nul 2>&1 || (echo vp installed but not found on PATH. Open a new terminal and run run.bat again. & pause & exit /b 1)
 
+rem Update on launch (also scheduled nightly by "update.bat --schedule").
+call "%~dp0update.bat"
+
 rem Always install: a no-op when up to date, and picks up changes after a pull.
 echo Installing dependencies...
 call vp i || (echo Dependency install failed. & pause & exit /b 1)

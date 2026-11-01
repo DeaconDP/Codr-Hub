@@ -13,6 +13,15 @@ if ! command -v vp >/dev/null; then
 fi
 command -v vp >/dev/null || pause_exit "vp installed but not found on PATH. Open a new terminal and run run.command again."
 
+# Update on launch: fast-forward from origin, then merge upstream T3 if it merges cleanly.
+# Offline, diverged, or conflicting updates are skipped and the app starts as-is.
+echo "Checking for updates..."
+git pull --ff-only -q 2>/dev/null || echo "Skipped origin update."
+if git fetch -q upstream 2>/dev/null && ! git merge --no-edit -q upstream/main 2>/dev/null; then
+  git merge --abort 2>/dev/null
+  echo "Skipped upstream update: merge needs a hand, run \"vp run sync:t3\"."
+fi
+
 # Always install: a no-op when up to date, and picks up changes after a pull.
 echo "Installing dependencies..."
 vp i || pause_exit "Dependency install failed."

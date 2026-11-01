@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { CODR_THEME } from "@t3tools/shared/themePalettes";
 import indexHtml from "../index.html?raw";
 import {
   CUSTOM_THEMES_STORAGE_KEY,
@@ -284,7 +285,14 @@ describe("index.html boot script", () => {
   });
 
   it("keeps every built-in boot splash in sync with the real palettes", () => {
-    for (const theme of [T3_CHAT_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
+    for (const theme of [
+      CODR_THEME,
+      T3_CHAT_THEME,
+      GROVE_THEME,
+      OCEAN_THEME,
+      EMBER_THEME,
+      IRIS_THEME,
+    ]) {
       expect(theme.appearance).toBe("light");
       for (const mode of ["light", "dark"] as const) {
         const colors = getThemeColorsForMode(theme, mode);
@@ -305,6 +313,13 @@ describe("index.html boot script", () => {
         expect(boot.metaContent).toBe(colors!.chrome);
       }
     }
+  });
+
+  it("paints Codr on a fresh install and follows the OS", () => {
+    const boot = runBootScript({ storage: {}, prefersDark: true });
+    expect(boot.themeId).toBe(CODR_THEME.id);
+    expect(boot.isDark).toBe(true);
+    expect(boot.backgroundColor).toBe(getThemeColorsForMode(CODR_THEME, "dark")!.chrome);
   });
 
   it("applies the matching half of an automatic mix to the splash", () => {
