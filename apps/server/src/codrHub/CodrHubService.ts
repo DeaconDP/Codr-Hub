@@ -341,8 +341,6 @@ export const layer = Layer.effect(
       yield* Ref.set(glancesRef, new Map(results.map(([local, , git]) => [local, git])));
     });
 
-    // --- dashboard insights ----------------------------------------------------
-
     const gitOut = (cwd: string, args: ReadonlyArray<string>) =>
       runner.run({ command: "git", args, cwd, timeout: "15 seconds" }).pipe(
         Effect.map((out) => (out.code === 0 ? out.stdout.trim() : "")),
@@ -408,8 +406,6 @@ export const layer = Layer.effect(
       yield* Ref.set(insightsRef, { atMs: now, value });
       return value;
     });
-
-    // --- snapshot ------------------------------------------------------------
 
     const ledgerState = Effect.gen(function* () {
       if (nodeReadError !== null) return yield* nodeReadError;
@@ -766,6 +762,10 @@ export const layer = Layer.effect(
         category: null,
         tags: [],
         repoUrl: null,
+        previewUrl: null,
+        liveUrl: null,
+        siteId: null,
+        surface: null,
         notes: "",
         hosts: {},
         autonomy: 0,
@@ -778,10 +778,22 @@ export const layer = Layer.effect(
         createdAt: now,
         updatedAt: now,
       };
-      const { id: _id, localPath, ...patch } = input;
+      const { id: _id, localPath, stickyPort, launchCmd, ...patch } = input;
       const hosts = { ...base.hosts };
-      if (localPath === null) delete hosts[nodeName];
-      else if (localPath !== undefined) hosts[nodeName] = { path: localPath };
+      if (localPath === null) {
+        delete hosts[nodeName];
+      } else if (localPath !== undefined || stickyPort !== undefined || launchCmd !== undefined) {
+        const previous = hosts[nodeName];
+        const path = localPath !== undefined ? localPath : (previous?.path ?? null);
+        // Host entries need a path; sticky/launch alone cannot create one.
+        if (path !== null) {
+          hosts[nodeName] = {
+            path,
+            stickyPort: stickyPort !== undefined ? stickyPort : (previous?.stickyPort ?? null),
+            launchCmd: launchCmd !== undefined ? launchCmd : (previous?.launchCmd ?? null),
+          };
+        }
+      }
       const next: HubProject = {
         ...base,
         ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)),
@@ -970,8 +982,6 @@ export const layer = Layer.effect(
       writeLock.withPermits(1),
       autopilotLock.withPermits(1),
     );
-
-    // --- Sync with T3 ----------------------------------------------------------
 
     /** Adds one Hub checkout to T3 through the normal project-create command. */
     const createT3Project = Effect.fn("codrHub.createT3Project")(function* (

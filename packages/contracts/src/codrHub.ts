@@ -17,6 +17,12 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 
+/** Absent JSON keys decode to null so older portfolio files stay readable. */
+const NullString = Schema.NullOr(Schema.String).pipe(
+  Schema.withDecodingDefault(Effect.succeed(null)),
+);
+const NullInt = Schema.NullOr(Schema.Int).pipe(Schema.withDecodingDefault(Effect.succeed(null)));
+
 export const HubPriority = Schema.Literals(["none", "low", "medium", "high", "critical"]);
 export type HubPriority = typeof HubPriority.Type;
 
@@ -74,7 +80,13 @@ export type HubLane = typeof HubLane.Type;
 export const HubJobKind = Schema.Literals(["dev", "edit", "writing", "image"]);
 export type HubJobKind = typeof HubJobKind.Type;
 
-export const HubProjectHost = Schema.Struct({ path: TrimmedNonEmptyString });
+export const HubProjectHost = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  /** Dev server port on this node only; meaningless on other machines. */
+  stickyPort: NullInt,
+  /** Rebuild/run hint for this node's checkout. */
+  launchCmd: NullString,
+});
 export type HubProjectHost = typeof HubProjectHost.Type;
 
 export const HubProject = Schema.Struct({
@@ -87,6 +99,16 @@ export const HubProject = Schema.Struct({
   category: Schema.NullOr(TrimmedNonEmptyString),
   tags: Schema.Array(TrimmedNonEmptyString),
   repoUrl: Schema.NullOr(TrimmedNonEmptyString),
+  /** Staging / preview site URL (shared product truth across the mesh). */
+  previewUrl: NullString,
+  /** Production site URL. */
+  liveUrl: NullString,
+  /** Optional product-family id for grouping later. */
+  siteId: NullString,
+  /**
+   * Product face label (e.g. ios / site). Free string — not T3 `clientSurface`.
+   */
+  surface: NullString,
   notes: Schema.String,
   /** Local checkout per mesh node, keyed by node name. */
   hosts: Schema.Record(Schema.String, HubProjectHost),
@@ -457,7 +479,7 @@ export function mergedProjectLastLaunchAt(merged: HubMergedProjectView): string 
 export const HubSubscribeInput = Schema.Struct({});
 export type HubSubscribeInput = typeof HubSubscribeInput.Type;
 
-/** Create when `id` is absent, otherwise patch. `localPath` sets this node's checkout. */
+/** Create when `id` is absent, otherwise patch. `localPath` / sticky / launch set this node's host. */
 export const HubUpsertProjectInput = Schema.Struct({
   id: Schema.optional(TrimmedNonEmptyString),
   name: Schema.optional(TrimmedNonEmptyString),
@@ -468,8 +490,14 @@ export const HubUpsertProjectInput = Schema.Struct({
   category: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   tags: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
   repoUrl: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  previewUrl: Schema.optional(Schema.NullOr(Schema.String)),
+  liveUrl: Schema.optional(Schema.NullOr(Schema.String)),
+  siteId: Schema.optional(Schema.NullOr(Schema.String)),
+  surface: Schema.optional(Schema.NullOr(Schema.String)),
   notes: Schema.optional(Schema.String),
   localPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  stickyPort: Schema.optional(Schema.NullOr(Schema.Int)),
+  launchCmd: Schema.optional(Schema.NullOr(Schema.String)),
   autonomy: Schema.optional(HubAutonomy),
   reviewBudget: Schema.optional(NonNegativeInt),
   sortIndex: Schema.optional(Schema.Number),
@@ -625,8 +653,6 @@ export class HubError extends Schema.TaggedError<HubError>()("HubError", {
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {}
-
-// --- dashboard insights ---------------------------------------------------------
 
 /** What a checkout is built with. Detected from tags first, then the checkout's files. */
 export const HubPlatform = Schema.Literals([

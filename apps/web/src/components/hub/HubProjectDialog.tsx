@@ -50,6 +50,7 @@ export function HubProjectDialog(props: {
 }) {
   const project = props.view?.project ?? null;
   const stages = stageOptions(props.sdlcMode);
+  const thisHost = project?.hosts[props.nodeName];
   const formId = useId();
   const [name, setName] = useState(project?.name ?? "");
   const [autonomy, setAutonomy] = useState<HubAutonomy>(project?.autonomy ?? 0);
@@ -60,7 +61,17 @@ export function HubProjectDialog(props: {
     project ? stageSelectValue(project.stage, props.sdlcMode) : (stages[0]?.value ?? "plan"),
   );
   const [localPath, setLocalPath] = useState(props.view?.localPath ?? "");
+  const [stickyPort, setStickyPort] = useState(
+    thisHost?.stickyPort !== null && thisHost?.stickyPort !== undefined
+      ? String(thisHost.stickyPort)
+      : "",
+  );
+  const [launchCmd, setLaunchCmd] = useState(thisHost?.launchCmd ?? "");
   const [repoUrl, setRepoUrl] = useState(project?.repoUrl ?? "");
+  const [previewUrl, setPreviewUrl] = useState(project?.previewUrl ?? "");
+  const [liveUrl, setLiveUrl] = useState(project?.liveUrl ?? "");
+  const [siteId, setSiteId] = useState(project?.siteId ?? "");
+  const [surface, setSurface] = useState(project?.surface ?? "");
   const [category, setCategory] = useState(project?.category ?? "");
   const [tags, setTags] = useState(project?.tags.join(", ") ?? "");
   const [notes, setNotes] = useState(project?.notes ?? "");
@@ -95,7 +106,13 @@ export function HubProjectDialog(props: {
 
   const trimmedOrNull = (value: string) => (value.trim() === "" ? null : value.trim());
   const budget = Number.parseInt(reviewBudget, 10);
-  const invalid = name.trim() === "" || !Number.isInteger(budget) || budget < 0;
+  const portTrimmed = stickyPort.trim();
+  const portValue = portTrimmed === "" ? null : Number.parseInt(portTrimmed, 10);
+  const invalid =
+    name.trim() === "" ||
+    !Number.isInteger(budget) ||
+    budget < 0 ||
+    (portTrimmed !== "" && (!Number.isInteger(portValue) || (portValue ?? 0) < 0));
   const strategyOptions = [
     { value: "", label: "None" },
     ...props.strategy.map((priorityItem) => ({
@@ -116,7 +133,13 @@ export function HubProjectDialog(props: {
       status,
       stage,
       localPath: trimmedOrNull(localPath),
+      stickyPort: portValue,
+      launchCmd: trimmedOrNull(launchCmd),
       repoUrl: trimmedOrNull(repoUrl),
+      previewUrl: trimmedOrNull(previewUrl),
+      liveUrl: trimmedOrNull(liveUrl),
+      siteId: trimmedOrNull(siteId),
+      surface: trimmedOrNull(surface),
       category: trimmedOrNull(category),
       tags: tags
         .split(",")
@@ -245,6 +268,75 @@ export function HubProjectDialog(props: {
                     onChange={(event) => setRepoUrl(event.target.value)}
                   />,
                 )}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {field(
+                    "stickyPort",
+                    `Sticky port on ${props.nodeName}`,
+                    <Input
+                      id={`${formId}-stickyPort`}
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      placeholder="5173"
+                      value={stickyPort}
+                      onChange={(event) => setStickyPort(event.target.value)}
+                    />,
+                  )}
+                  {field(
+                    "launchCmd",
+                    `Launch command on ${props.nodeName}`,
+                    <Input
+                      id={`${formId}-launchCmd`}
+                      placeholder="npm run dev"
+                      value={launchCmd}
+                      onChange={(event) => setLaunchCmd(event.target.value)}
+                    />,
+                  )}
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {field(
+                    "previewUrl",
+                    "Preview site",
+                    <Input
+                      id={`${formId}-previewUrl`}
+                      placeholder="https://preview.example"
+                      value={previewUrl}
+                      onChange={(event) => setPreviewUrl(event.target.value)}
+                    />,
+                  )}
+                  {field(
+                    "liveUrl",
+                    "Live site",
+                    <Input
+                      id={`${formId}-liveUrl`}
+                      placeholder="https://example.com"
+                      value={liveUrl}
+                      onChange={(event) => setLiveUrl(event.target.value)}
+                    />,
+                  )}
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {field(
+                    "siteId",
+                    "Site id",
+                    <Input
+                      id={`${formId}-siteId`}
+                      placeholder="product-family"
+                      value={siteId}
+                      onChange={(event) => setSiteId(event.target.value)}
+                    />,
+                  )}
+                  {field(
+                    "surface",
+                    "Surface (ios, site, …)",
+                    <Input
+                      id={`${formId}-surface`}
+                      placeholder="site"
+                      value={surface}
+                      onChange={(event) => setSurface(event.target.value)}
+                    />,
+                  )}
+                </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   {field(
                     "lane",

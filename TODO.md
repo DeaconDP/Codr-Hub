@@ -92,7 +92,7 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Upsert + Deez import map for the new fields; merge this-node sticky/launch
 - [x] Hub dialog + table glance links (Preview / Live; muted port/cmd; no Run/OpenShip)
 - [x] Docs + focused tests (stacked on kanban, branch `codr-hub/e3-site-fleet`)
-- [ ] Land https://github.com/DeaconDP/Codr-Hub/pull/5 into codr-hub/v0.1
+- [x] Land https://github.com/DeaconDP/Codr-Hub/pull/5 into codr-hub/v0.1 (squashed)
 
 ## Job kind, model policy, pace targets (uncommitted)
 

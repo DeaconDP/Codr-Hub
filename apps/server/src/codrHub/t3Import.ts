@@ -1,17 +1,7 @@
 /**
- * Keeps this node's T3 projects and the portfolio in step. Pure.
- *
- * `mergeT3Import` brings T3 projects into the portfolio: a T3 project already
- * checked out on this node is left alone. One that matches a portfolio project
- * by repository, then by name, fills that project's checkout here when it has
- * none or its path is missing. Anything else is added with the autopilot off.
- * Owner edits are never overwritten.
- *
- * `planT3Creates` is the reverse direction used by Sync with T3: portfolio
- * checkouts on this node that T3 has no project for. Nothing is ever deleted
- * on either side.
- *
- * @module codrHub/t3Import
+ * Keeps this node's T3 projects and the portfolio in step, and never deletes on either side.
+ * `mergeT3Import` links T3 projects by repository, then name, without overwriting owner edits;
+ * `planT3Creates` lists this node's portfolio checkouts that T3 has no project for.
  */
 import type { HubProject, OrchestrationProjectShell } from "@t3tools/contracts";
 
@@ -102,7 +92,14 @@ export function mergeT3Import(
     }
     const next: HubProject = {
       ...match,
-      hosts: { ...match.hosts, [context.nodeName]: { path: t3.workspaceRoot } },
+      hosts: {
+        ...match.hosts,
+        [context.nodeName]: {
+          path: t3.workspaceRoot,
+          stickyPort: match.hosts[context.nodeName]?.stickyPort ?? null,
+          launchCmd: match.hosts[context.nodeName]?.launchCmd ?? null,
+        },
+      },
       repoUrl: match.repoUrl ?? repoUrl,
       updatedAt: context.nowIso,
     };

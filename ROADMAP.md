@@ -19,7 +19,7 @@ Portfolio store (git-backed), strategy list, project table, Deez-PM import, paci
 
 ### E3. Fold in Deez-Project-Manager
 
-Kanban tasks per project (PR #4) and site fleet: preview/live URLs, sticky ports, launch commands (PR #5), both implemented, PRs open. Remaining: the machine monitor, Unity Hub/VCC imports, tags and saved views.
+Kanban tasks per project (PR #4) and site fleet: preview/live URLs, sticky ports, launch commands (PR #5), both on `codr-hub/v0.1`. Remaining: the machine monitor, Unity Hub/VCC imports, tags and saved views.
 
 ### E4. Fold in Cursor-Hub
 

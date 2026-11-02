@@ -25,6 +25,8 @@ Under a project's **Details**, set **Job kind** to Dev, Edit, Writing, or Image.
 
 **Lane** groups projects into Immersion, Automation, or Publicity for filtering. Strategy and priority still determine their rank.
 
+**Preview site** and **Live site** (plus an optional site id and surface) are also under **Details**. They are shared by every machine and show as links under the project's row. **Sticky port** and **Launch command** apply only to this machine. Import from Deez-PM fills empty fields and never overwrites what you edited in the Hub.
+
 ## Importing from T3
 
 **Import from T3** brings in the projects that the selected machine has open in T3. A project that's already in the Hub, matched by its git remote or its name, gets this machine's checkout instead of being added twice. This also fixes a **Path missing** checkout when the project has moved. Your edits to Hub projects are never overwritten.

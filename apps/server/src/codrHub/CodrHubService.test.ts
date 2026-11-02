@@ -105,6 +105,40 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
+  it.effect("merges this-node stickyPort and launchCmd without wiping path", () =>
+    Effect.gen(function* () {
+      const { baseDir, paths } = yield* fixture;
+      yield* Effect.gen(function* () {
+        const hub = yield* Hub.CodrHubService;
+        yield* hub.setNode({ nodeName: "Steve" });
+        yield* hub.upsertProject({
+          name: "Fleet",
+          localPath: "/Users/steve/Fleet",
+          previewUrl: "https://preview.example",
+        });
+        yield* hub.upsertProject({
+          id: "fleet",
+          stickyPort: 5173,
+          launchCmd: "npm run dev",
+        });
+        const [saved] = yield* Store.readProjects(paths);
+        expect(saved?.previewUrl).toBe("https://preview.example");
+        expect(saved?.hosts.Steve).toEqual({
+          path: "/Users/steve/Fleet",
+          stickyPort: 5173,
+          launchCmd: "npm run dev",
+        });
+        yield* hub.upsertProject({ id: "fleet", localPath: "/Users/steve/Fleet-2" });
+        const [moved] = yield* Store.readProjects(paths);
+        expect(moved?.hosts.Steve).toEqual({
+          path: "/Users/steve/Fleet-2",
+          stickyPort: 5173,
+          launchCmd: "npm run dev",
+        });
+      }).pipe(Effect.provide(serviceLayer(baseDir)));
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
   it.effect("applies a batch upsert as one portfolio commit", () =>
     Effect.gen(function* () {
       const { baseDir, paths } = yield* fixture;
@@ -123,7 +157,9 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
         const saved = new Map((yield* Store.readProjects(paths)).map((p) => [p.id, p]));
         expect(saved.get("alpha")?.sortIndex).toBe(1);
         expect(saved.get("beta")).toMatchObject({ sortIndex: 0, favorite: true, autonomy: 0 });
-        expect(Object.values(saved.get("beta")?.hosts ?? {})).toEqual([{ path: "/work/beta" }]);
+        expect(Object.values(saved.get("beta")?.hosts ?? {})).toEqual([
+          { path: "/work/beta", stickyPort: null, launchCmd: null },
+        ]);
       }).pipe(Effect.provide(serviceLayer(baseDir)));
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
@@ -166,8 +202,8 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
         });
         const saved = (yield* Store.readProjects(paths)).map((p) => [p.id, Object.values(p.hosts)]);
         expect(saved).toEqual([
-          ["alpha", [{ path: "/work/alpha" }]],
-          ["beta", [{ path: "/work/beta" }]],
+          ["alpha", [{ path: "/work/alpha", stickyPort: null, launchCmd: null }]],
+          ["beta", [{ path: "/work/beta", stickyPort: null, launchCmd: null }]],
         ]);
       }).pipe(Effect.provide(serviceLayer(baseDir, { listShells })));
     }).pipe(Effect.provide(ProcessRunner.layer)),

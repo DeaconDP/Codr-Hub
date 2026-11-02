@@ -5,18 +5,23 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   DEFAULT_HUB_SETTINGS,
-  HubProject as HubProjectSchema,
+  HubProject,
+  HubProjectHost,
   HubProjectView as HubProjectViewSchema,
   hubProjectViewForNode,
   mergeHubProjectViews,
   mergedProjectLastLaunchAt,
-  type HubProject,
+  type HubProject as HubProjectType,
   type HubProjectView,
   type HubSnapshot,
   type TestHandoff,
 } from "./codrHub.ts";
 
-const project = (overrides: Partial<HubProject>): HubProject => ({
+const decodeHubProject = Schema.decodeSync(HubProject);
+const decodeHubProjectView = Schema.decodeSync(HubProjectViewSchema);
+const decodeHubProjectHost = Schema.decodeSync(HubProjectHost);
+
+const project = (overrides: Partial<HubProjectType>): HubProjectType => ({
   id: "alpha",
   name: "Alpha",
   priority: "medium",
@@ -26,6 +31,10 @@ const project = (overrides: Partial<HubProject>): HubProject => ({
   category: null,
   tags: [],
   repoUrl: null,
+  previewUrl: null,
+  liveUrl: null,
+  siteId: null,
+  surface: null,
   notes: "",
   hosts: {},
   autonomy: 0,
@@ -40,7 +49,9 @@ const project = (overrides: Partial<HubProject>): HubProject => ({
   ...overrides,
 });
 
-const view = (overrides: Partial<HubProjectView> & { project: HubProject }): HubProjectView => ({
+const view = (
+  overrides: Partial<HubProjectView> & { project: HubProjectType },
+): HubProjectView => ({
   localPath: null,
   pathExists: false,
   git: null,
@@ -71,12 +82,12 @@ const snapshot = (overrides: Pick<HubSnapshot, "nodeName" | "projects">): HubSna
 describe("mergeHubProjectViews", () => {
   it("unions by project id and overlays per nodeName", () => {
     const steveProject = project({
-      hosts: { Steve: { path: "/Users/steve/Alpha" } },
+      hosts: { Steve: { path: "/Users/steve/Alpha", stickyPort: null, launchCmd: null } },
       updatedAt: "2026-10-02T00:00:00.000Z",
     });
     const adaProject = project({
       name: "Alpha from Ada",
-      hosts: { Ada: { path: "/Users/ada/Alpha" } },
+      hosts: { Ada: { path: "/Users/ada/Alpha", stickyPort: null, launchCmd: null } },
       updatedAt: "2026-10-03T00:00:00.000Z",
     });
     expect(
@@ -211,6 +222,73 @@ describe("mergeHubProjectViews", () => {
   });
 });
 
+describe("HubProject site-fleet decode defaults", () => {
+  it("fills missing shared fleet fields and host sticky/launch with null", () => {
+    const decoded = decodeHubProject({
+      id: "alpha",
+      name: "Alpha",
+      priority: "medium",
+      status: "active",
+      stage: "develop",
+      strategyId: null,
+      category: null,
+      tags: [],
+      repoUrl: null,
+      notes: "",
+      hosts: { Steve: { path: "/Users/steve/Alpha" } },
+      autonomy: 0,
+      reviewBudget: 2,
+      sortIndex: 0,
+      favorite: false,
+      archived: false,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    });
+    expect(decoded).toMatchObject({
+      previewUrl: null,
+      liveUrl: null,
+      siteId: null,
+      surface: null,
+      hosts: { Steve: { path: "/Users/steve/Alpha", stickyPort: null, launchCmd: null } },
+    });
+  });
+
+  it("keeps explicit fleet values on project and host", () => {
+    const host = decodeHubProjectHost({
+      path: "/work",
+      stickyPort: 5173,
+      launchCmd: "npm run dev",
+    });
+    expect(host).toEqual({ path: "/work", stickyPort: 5173, launchCmd: "npm run dev" });
+    const decoded = decodeHubProject({
+      id: "alpha",
+      name: "Alpha",
+      priority: "medium",
+      status: "active",
+      stage: "develop",
+      strategyId: null,
+      category: null,
+      tags: [],
+      repoUrl: null,
+      previewUrl: "https://preview.example",
+      liveUrl: "https://live.example",
+      siteId: "emily",
+      surface: "site",
+      notes: "",
+      hosts: { Steve: host },
+      autonomy: 0,
+      reviewBudget: 2,
+      sortIndex: 0,
+      favorite: false,
+      archived: false,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    });
+    expect(decoded.previewUrl).toBe("https://preview.example");
+    expect(decoded.hosts.Steve).toEqual(host);
+  });
+});
+
 describe("hubProjectViewForNode", () => {
   it("maps the selected node back to a single reporting HubProjectView", () => {
     const merged = mergeHubProjectViews([
@@ -287,9 +365,6 @@ describe("hubProjectViewForNode", () => {
     expect(valueBeatsNull.handoff).toEqual(older);
   });
 });
-
-const decodeHubProject = Schema.decodeSync(HubProjectSchema);
-const decodeHubProjectView = Schema.decodeSync(HubProjectViewSchema);
 
 describe("HubProject decode", () => {
   it("decodes an old project JSON object that omits lane and jobKind", () => {
