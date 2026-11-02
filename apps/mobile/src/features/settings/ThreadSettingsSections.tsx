@@ -200,7 +200,7 @@ export function NewThreadSettingsSection() {
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const useLastProject =
-    AsyncResult.isSuccess(preferences) && preferences.value.useLastProjectForNewThreads !== false;
+    AsyncResult.isSuccess(preferences) && preferences.value.useLastProjectForNewThreads === true;
 
   return (
     <SettingsSection title="New threads">

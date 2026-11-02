@@ -56,7 +56,7 @@ export function linkPickerRows<G extends PickerGroup>(
 }
 
 /** Arranged projects by manual order; projects never arranged follow, by name. */
-export function comparePickerRows(a: PickerRow, b: PickerRow): number {
+function comparePickerRows(a: PickerRow, b: PickerRow): number {
   if (a.hub && b.hub) {
     return (
       a.hub.project.sortIndex - b.hub.project.sortIndex ||

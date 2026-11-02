@@ -1,13 +1,6 @@
-/**
- * "Update from T3 Code": merges `upstream/main` into the running server's own
- * source checkout and pushes the result to `origin`. Fleet parents on every
- * node already fast-forward from `origin` and restart when idle
- * (`scripts/codr-hub-fleet/`), so pushing is the whole fan-out.
- *
- * Never leaves the checkout mid-merge: a conflict is aborted and reported.
- *
- * @module codrHub/upstreamSync
- */
+// "Update from T3 Code": merge `upstream/main` into this server's checkout and push to
+// `origin`; fleet parents (`scripts/codr-hub-fleet/`) fast-forward from there, so the push
+// is the whole fan-out. A conflict is aborted and reported, never left mid-merge.
 import { HubError, type HubUpstreamMergeResult, type HubUpstreamStatus } from "@t3tools/contracts";
 import type * as Duration from "effect/Duration";
 import * as Clock from "effect/Clock";
@@ -19,8 +12,8 @@ import * as Semaphore from "effect/Semaphore";
 import { ProcessRunner, layer as ProcessRunnerLayer } from "../processRunner.ts";
 import { GIT_GLANCE_ARGS, parseGitGlance } from "./gitGlance.ts";
 
-export const UPSTREAM_REMOTE = "upstream";
-export const UPSTREAM_REF = "upstream/main";
+const UPSTREAM_REMOTE = "upstream";
+const UPSTREAM_REF = "upstream/main";
 
 const IN_PROGRESS_MARKERS = [
   "MERGE_HEAD",
@@ -34,18 +27,17 @@ type Requirements = ProcessRunner | FileSystem.FileSystem | Path.Path;
 
 const firstLine = (text: string) => text.trim().split("\n")[0] ?? "";
 
-const run = (cwd: string, args: ReadonlyArray<string>, timeout: Duration.Input = "30 seconds") =>
-  Effect.gen(function* () {
-    const runner = yield* ProcessRunner;
-    // No credential prompts: a server has no terminal to answer them.
-    return yield* runner.run({
-      command: "git",
-      args,
-      cwd,
-      timeout,
-      env: { GIT_TERMINAL_PROMPT: "0" },
-    });
-  }).pipe(Effect.mapError((cause) => new HubError({ message: `git ${args[0]} failed.`, cause })));
+const run = Effect.fn("codrHub.upstreamSync.git")(function* (
+  cwd: string,
+  args: ReadonlyArray<string>,
+  timeout: Duration.Input = "30 seconds",
+) {
+  const runner = yield* ProcessRunner;
+  // No credential prompts: a server has no terminal to answer them.
+  return yield* runner
+    .run({ command: "git", args, cwd, timeout, env: { GIT_TERMINAL_PROMPT: "0" } })
+    .pipe(Effect.mapError((cause) => new HubError({ message: `git ${args[0]} failed.`, cause })));
+});
 
 const runOk = (cwd: string, args: ReadonlyArray<string>, timeout?: Duration.Input) =>
   run(cwd, args, timeout).pipe(
