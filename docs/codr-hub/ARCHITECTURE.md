@@ -37,8 +37,7 @@ Upstream T3 Code lands about 40 commits a day. Every line we change in an upstre
 | `packages/client-runtime/package.json`                   | `./codrHub/linkTailnetMesh` export                                                                                    |
 | `apps/web/src/authBootstrap.test.ts`                     | Tailnet join test                                                                                                     |
 | `package.json`                                           | `codr:always-on`, `codr:always-off`, `codr:phone` script aliases                                                      |
-| `pnpm-workspace.yaml`                                    | `patchedDependencies` entry for `expo-modules-jsi@58.0.7` (Swift 6.4 patch)                                           |
-| `pnpm-lock.yaml`                                         | Regenerated for the `expo-modules-jsi` patch hash                                                                     |
+| `knip.jsonc`                                             | `codr-hub-fleet/parent.ts` listed as a scripts entry                                                                  |
 | `apps/server/src/ws.test.ts`                             | `CodrHubService` mock in the two config-boundary test layers                                                          |
 | `apps/server/src/observability/RpcInstrumentation.ts`    | `codrHub` span aggregate per hub method                                                                               |
 | `apps/web/src/components/chat/TimelineWorkGroupRows.tsx` | `LiveActivityRow` ref uses `useLiveStageCueRef` (E9 stage cues, `apps/web/src/codrHub`)                               |

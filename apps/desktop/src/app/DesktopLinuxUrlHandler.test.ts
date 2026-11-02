@@ -174,7 +174,7 @@ describe("DesktopLinuxUrlHandler", () => {
     });
 
     assert.include(entry, "[Desktop Entry]");
-    assert.include(entry, "Name=T3 Code (Nightly)");
+    assert.include(entry, "Name=Codr-Hub (Nightly)");
     assert.include(
       entry,
       'Exec="/home/al ice/Apps/T3 \\\\"100%%\\\\" \\\\$HOME\\\\\\\\x.AppImage" %U',
@@ -227,7 +227,7 @@ describe("DesktopLinuxUrlHandler", () => {
       assert.include(
         recorded.files[0]?.content,
         DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
-          displayName: "T3 Code (Alpha)",
+          displayName: "Codr-Hub (Alpha)",
           execTarget: process.execPath,
           scheme: "t3code",
           iconPath: "/home/alice/.local/share/icons/com.t3tools.T3Code.desktop.png",

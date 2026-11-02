@@ -120,12 +120,12 @@ h1{font-size:18px;margin:0}p{margin:0}.muted{color:var(--muted)}
 .button.primary{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 pre{flex:1;min-height:60px;margin:0;overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:6px;padding:10px;font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
 </style></head><body>
-<h1>T3 Code could not start</h1>
+<h1>Codr-Hub could not start</h1>
 <p>${escapeHtml(input.failure.reason)}</p>
 <p>${escapeHtml(offer.text)}</p>
 <div class="actions">${offer.action}${actionLink("copy", "Copy details")}${actionLink("quit", "Quit")}</div>
 <pre>${escapeHtml(output.length > 0 ? output : "The server wrote no output.")}</pre>
-<p class="muted">Version ${escapeHtml(input.appVersion)}. T3 Code tries again in the background. Logs: ${escapeHtml(input.logDir)}</p>
+<p class="muted">Version ${escapeHtml(input.appVersion)}. Codr-Hub tries again in the background. Logs: ${escapeHtml(input.logDir)}</p>
 </body></html>`;
 }
 
@@ -245,7 +245,7 @@ export const listen: Effect.Effect<
           minWidth: 420,
           minHeight: 320,
           show: false,
-          title: "T3 Code could not start",
+          title: "Codr-Hub could not start",
           autoHideMenuBar: true,
           backgroundColor: shouldUseDarkColors ? "#000000" : "#ffffff",
           webPreferences: {
