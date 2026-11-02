@@ -27,6 +27,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import * as Dialog from "../../components/ui/Dialog";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { Menu } from "../../components/ui/Menu";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { cn } from "../../lib/cn";
@@ -37,6 +38,11 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 import { useSelectWorkspaceTab } from "../workspace/useSelectWorkspaceTab";
+import {
+  hubProjectMenuActions,
+  hubProjectPatchForAction,
+  type HubProjectPatch,
+} from "./hubProjectMenu";
 import { useHubInsights, useHubPortfolio } from "./useHubPortfolio";
 
 type HubView = "ranked" | "favorites" | "activity";
@@ -123,39 +129,47 @@ function ProjectList(props: { portfolio: Portfolio; favoritesOnly: boolean }) {
   const upsertProject = useAtomCommand(serverEnvironment.hubUpsertProject, {
     reportFailure: false,
   });
-  // Saving commits to the portfolio repo, so show the tap before the snapshot catches up.
-  const [pendingFavorites, setPendingFavorites] = useState<ReadonlyMap<string, boolean>>(new Map());
+  // Saving commits to the portfolio repo, so show an edit before the snapshot catches up.
+  const [pendingEdits, setPendingEdits] = useState<ReadonlyMap<string, HubProjectPatch>>(new Map());
   const [showFinished, setShowFinished] = useState(false);
 
-  const isFavorite = (view: HubMergedProjectView) =>
-    pendingFavorites.get(view.project.id) ?? view.project.favorite;
-  const ranked = filterAndSortProjects(portfolio.projects, {
-    filter: showFinished ? "all" : "open",
-    sort: "rank",
-    query: "",
-    strategy: snapshot.strategy,
-  });
-  const finishedCount = portfolio.projects.filter(
-    ({ project }) => project.archived || project.status === "done",
-  ).length;
-  // Rank stays the portfolio rank, so a favourite shows the same number in both lists.
-  const rows = ranked
-    .map((view, index) => ({ view, rank: index + 1 }))
-    .filter((row) => !favoritesOnly || isFavorite(row.view));
+  const projects =
+    pendingEdits.size === 0
+      ? portfolio.projects
+      : portfolio.projects.map((view) => {
+          const edit = pendingEdits.get(view.project.id);
+          return edit ? { ...view, project: { ...view.project, ...edit } } : view;
+        });
+  const inRankOrder = (filter: "open" | "all") =>
+    filterAndSortProjects(projects, {
+      filter,
+      sort: "rank",
+      query: "",
+      strategy: snapshot.strategy,
+    });
+  const isFinished = ({ project }: HubMergedProjectView) =>
+    project.archived || project.status === "done";
+  const finished = inRankOrder("all").filter(isFinished);
+  // Rank is the open portfolio's, so a favourite shows the same number in both lists and
+  // showing finished work never renumbers it.
+  const rows = [
+    ...inRankOrder("open").map((view, index) => ({ view, rank: (index + 1) as number | null })),
+    ...(showFinished ? finished.map((view) => ({ view, rank: null })) : []),
+  ].filter((row) => !favoritesOnly || row.view.project.favorite);
 
-  const toggleFavorite = async (view: HubMergedProjectView) => {
+  const editProject = async (view: HubMergedProjectView, edit: HubProjectPatch) => {
     const environmentId = hubWriteEnvironment(view, portfolio.nodeNameByEnvironmentId, null);
     if (environmentId === null) {
-      Dialog.alert("Could not update favourite", "No connected machine has this project.");
+      Dialog.alert(
+        `Could not update ${view.project.name}`,
+        "No connected machine has this project.",
+      );
       return;
     }
     const { id } = view.project;
-    setPendingFavorites((current) => new Map(current).set(id, !isFavorite(view)));
-    const result = await upsertProject({
-      environmentId,
-      input: { id, favorite: !isFavorite(view) },
-    });
-    setPendingFavorites((current) => {
+    setPendingEdits((current) => new Map(current).set(id, { ...current.get(id), ...edit }));
+    const result = await upsertProject({ environmentId, input: { id, ...edit } });
+    setPendingEdits((current) => {
       const next = new Map(current);
       next.delete(id);
       return next;
@@ -163,7 +177,7 @@ function ProjectList(props: { portfolio: Portfolio; favoritesOnly: boolean }) {
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const failure = squashAtomCommandFailure(result);
       Dialog.alert(
-        "Could not update favourite",
+        `Could not update ${view.project.name}`,
         failure instanceof Error ? failure.message : "The request failed.",
       );
     }
@@ -211,7 +225,7 @@ function ProjectList(props: { portfolio: Portfolio; favoritesOnly: boolean }) {
             >
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`${rank}, ${view.project.name}${target ? ", start a task" : ""}`}
+                accessibilityLabel={`${rank === null ? "Finished" : rank}, ${view.project.name}${target ? ", start a task" : ""}`}
                 disabled={target === null}
                 onPress={() => {
                   if (!target) return;
@@ -230,7 +244,7 @@ function ProjectList(props: { portfolio: Portfolio; favoritesOnly: boolean }) {
                 className="min-w-0 flex-1 flex-row items-center gap-3 py-3 ps-4"
               >
                 <Text className="w-6 text-center text-sm font-t3-bold text-foreground-muted">
-                  {rank}
+                  {rank ?? "–"}
                 </Text>
                 <View className="min-w-0 flex-1">
                   <Text className="text-base font-t3-bold leading-snug" numberOfLines={1}>
@@ -241,21 +255,51 @@ function ProjectList(props: { portfolio: Portfolio; favoritesOnly: boolean }) {
                   </Text>
                 </View>
               </Pressable>
+              <Menu
+                title={view.project.name}
+                actions={hubProjectMenuActions(
+                  view.project,
+                  snapshot.strategy,
+                  snapshot.settings.sdlcMode,
+                )}
+                onPressAction={({ nativeEvent }) => {
+                  const edit = hubProjectPatchForAction(
+                    nativeEvent.event,
+                    snapshot.settings.sdlcMode,
+                  );
+                  if (edit) void editProject(view, edit);
+                }}
+              >
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${view.project.name}`}
+                  className="size-11 items-center justify-center"
+                >
+                  <SymbolView
+                    name="ellipsis.circle"
+                    size={20}
+                    tintColorClassName="accent-icon-subtle"
+                    type="monochrome"
+                  />
+                </Pressable>
+              </Menu>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={
-                  isFavorite(view)
+                  view.project.favorite
                     ? `Remove ${view.project.name} from favourites`
                     : `Add ${view.project.name} to favourites`
                 }
-                accessibilityState={{ selected: isFavorite(view) }}
-                onPress={() => void toggleFavorite(view)}
+                accessibilityState={{ selected: view.project.favorite }}
+                onPress={() => void editProject(view, { favorite: !view.project.favorite })}
                 className="size-12 items-center justify-center"
               >
                 <SymbolView
-                  name={isFavorite(view) ? "star.fill" : "star"}
+                  name={view.project.favorite ? "star.fill" : "star"}
                   size={20}
-                  tintColorClassName={isFavorite(view) ? "accent-foreground" : "accent-icon-subtle"}
+                  tintColorClassName={
+                    view.project.favorite ? "accent-foreground" : "accent-icon-subtle"
+                  }
                   type="monochrome"
                 />
               </Pressable>
@@ -263,14 +307,14 @@ function ProjectList(props: { portfolio: Portfolio; favoritesOnly: boolean }) {
           );
         })}
       </View>
-      {!favoritesOnly && finishedCount > 0 ? (
+      {!favoritesOnly && finished.length > 0 ? (
         <Pressable
           accessibilityRole="button"
           onPress={() => setShowFinished((current) => !current)}
           className="min-h-11 items-center justify-center"
         >
           <Text className="text-sm text-foreground-muted">
-            {showFinished ? "Hide finished" : `Show ${finishedCount} finished`}
+            {showFinished ? "Hide finished" : `Show ${finished.length} finished`}
           </Text>
         </Pressable>
       ) : null}
