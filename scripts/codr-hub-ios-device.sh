@@ -6,12 +6,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# `npm run` exports npm_config_prefix, and nvm refuses to load while it is set
+# (it matches the name case-insensitively).
+unset npm_config_prefix NPM_CONFIG_PREFIX
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 # shellcheck disable=SC1091
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 nvm use 24 >/dev/null
 
-export PATH="$HOME/.nvm/versions/node/$(node -v)/bin:$PATH"
+# Assign before exporting: `export X="$(cmd)"` hides a failing cmd from set -e.
+NODE_VERSION="$(node -v)"
+export PATH="$HOME/.nvm/versions/node/$NODE_VERSION/bin:$PATH"
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
 export T3CODE_IOS_APPLE_TEAM_ID="${T3CODE_IOS_APPLE_TEAM_ID:-3825NK7CQ8}"
@@ -21,7 +26,11 @@ export APP_VARIANT="${APP_VARIANT:-development}"
 export EXPO_NO_GIT_STATUS=1
 # Baked into the dev client as its launch URL, so the app opens straight into
 # Metro instead of Expo's server picker. Override for Tailscale.
-export CODR_HUB_METRO_URL="${CODR_HUB_METRO_URL:-http://$(scutil --get LocalHostName).local:8081}"
+if [[ -z "${CODR_HUB_METRO_URL:-}" ]]; then
+  LOCAL_HOST_NAME="$(scutil --get LocalHostName)"
+  CODR_HUB_METRO_URL="http://$LOCAL_HOST_NAME.local:8081"
+fi
+export CODR_HUB_METRO_URL
 
 DEVICE="${1:-}"
 if [[ -z "$DEVICE" ]]; then
@@ -75,7 +84,10 @@ xcrun devicectl device install app --device "$DEVICE" "$APP"
 # Expo's server list until it is.
 DEEP_LINK="codrhub-dev://expo-development-client/?url=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$CODR_HUB_METRO_URL")"
 xcrun devicectl device process launch --device "$DEVICE" --terminate-existing \
-  --payload-url "$DEEP_LINK" "$T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID" || true
+  --payload-url "$DEEP_LINK" "$T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID" || {
+  echo "Installed Codr-Hub Dev, but could not launch it. Unlock the iPhone and rerun, or open it by hand." >&2
+  exit 1
+}
 
 cat <<EOF
 
