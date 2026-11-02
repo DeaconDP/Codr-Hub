@@ -1,3 +1,4 @@
+import { isPageTab } from "./navigation-tab-order";
 import { selectedNavigationTab, visibleNavigationTabs } from "./navigation-tab-order";
 import { requireNativeView } from "expo";
 import { CommonActions, useNavigation } from "@react-navigation/native";
@@ -104,7 +105,7 @@ export function AndroidWorkspaceNavigation(props: {
   const composeBesideBar =
     props.paneWidth === undefined
       ? selectedTab === "threads"
-      : selectedTab !== "settings" && selectedTab !== "usage";
+      : selectedTab !== "settings" && !isPageTab(selectedTab);
   const metrics = floatingTabsMetrics(
     tabs.length,
     scale,

@@ -8,7 +8,7 @@ import {
   stageOptions,
   stageSelectValue,
   t3SyncSummary,
-} from "./hubFormat";
+} from "./hubFormat.ts";
 
 const view = (
   overrides: Partial<HubProject>,

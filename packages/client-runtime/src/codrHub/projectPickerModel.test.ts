@@ -10,7 +10,8 @@ import {
   pickerWriteFor,
   planPickerReorder,
   rowMatches,
-} from "./projectPickerModel";
+  t3ProjectForHubView,
+} from "./projectPickerModel.ts";
 
 const steve = "env-steve" as EnvironmentId;
 const ada = "env-ada" as EnvironmentId;
@@ -85,6 +86,21 @@ describe("linkPickerRows", () => {
       nodes,
     );
     expect(rows.map((row) => row.hub?.project.id ?? null)).toEqual(["web", null]);
+  });
+});
+
+describe("t3ProjectForHubView", () => {
+  it("finds the T3 project by checkout path on its own node, never another node's same path", () => {
+    const projects = [
+      { environmentId: steve, workspaceRoot: "/home/d/web" },
+      { environmentId: ada, workspaceRoot: "/home/d/web/" },
+    ];
+    const view = hub("web", {}, [
+      ["Steve", null],
+      ["Ada", "/home/d/web"],
+    ]);
+    expect(t3ProjectForHubView(view, projects, nodes)).toBe(projects[1]);
+    expect(t3ProjectForHubView(hub("none", {}, [["Ada", null]]), projects, nodes)).toBeNull();
   });
 });
 

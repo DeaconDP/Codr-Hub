@@ -36,7 +36,7 @@ import {
   labelOf,
   stageOptions,
   stageSelectValue,
-} from "./hubFormat";
+} from "@t3tools/client-runtime/codrHub/hubFormat";
 import { useHubAction } from "./useHubAction";
 
 /** Create or edit a project. The form stays open and keeps its input if saving fails. */

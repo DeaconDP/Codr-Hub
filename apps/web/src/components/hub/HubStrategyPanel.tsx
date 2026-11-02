@@ -6,7 +6,7 @@ import { randomUUID } from "../../lib/utils";
 import { serverEnvironment } from "../../state/server";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { newStrategyId } from "./hubFormat";
+import { newStrategyId } from "@t3tools/client-runtime/codrHub/hubFormat";
 import { useHubAction } from "./useHubAction";
 
 /**

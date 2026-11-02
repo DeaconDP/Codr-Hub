@@ -84,6 +84,21 @@
       "import": "./src/codrHub/linkTailnetMesh.ts",
       "default": "./src/codrHub/linkTailnetMesh.ts"
     },
+    "./codrHub/hubFormat": {
+      "types": "./src/codrHub/hubFormat.ts",
+      "import": "./src/codrHub/hubFormat.ts",
+      "default": "./src/codrHub/hubFormat.ts"
+    },
+    "./codrHub/projectPickerModel": {
+      "types": "./src/codrHub/projectPickerModel.ts",
+      "import": "./src/codrHub/projectPickerModel.ts",
+      "default": "./src/codrHub/projectPickerModel.ts"
+    },
+    "./codrHub/hubActivity": {
+      "types": "./src/codrHub/hubActivity.ts",
+      "import": "./src/codrHub/hubActivity.ts",
+      "default": "./src/codrHub/hubActivity.ts"
+    },
     "./authorization": {
       "types": "./src/authorization/index.ts",
       "default": "./src/authorization/index.ts"

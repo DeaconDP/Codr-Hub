@@ -34,6 +34,7 @@ import type { WorkspaceState } from "../../state/workspaceModel";
 import { useWorkspaceState } from "../../state/workspace";
 
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
+import { useHubOrderedScopes } from "../hub/useHubOrderedScopes";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import {
   filterProjectScopes,
@@ -182,7 +183,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         isScratchProject(project, serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot),
       ),
   );
-  const visibleScopes = filterProjectScopes(listScopes, searchText);
+  const { scopes: orderedScopes, favoriteKeys } = useHubOrderedScopes(listScopes);
+  const visibleScopes = filterProjectScopes(orderedScopes, searchText);
   const resumedDestinationKeyRef = useRef<string | null>(null);
   const reservedDestinationProject = incomingShare?.destination
     ? (projects.find(
@@ -488,6 +490,16 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                       subtitleEllipsizeMode="middle"
                       disabled={reservedDestinationProject !== null}
                       onPress={() => void selectProject(selectionTarget)}
+                      trailing={
+                        favoriteKeys.has(scope.key) ? (
+                          <SymbolView
+                            name="star.fill"
+                            size={16}
+                            tintColorClassName="accent-icon-muted"
+                            type="monochrome"
+                          />
+                        ) : undefined
+                      }
                       leading={
                         <ProjectFavicon
                           environmentId={scope.representative.environmentId}
@@ -537,6 +549,14 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                             : selectionTarget.workspaceRoot}
                         </Text>
                       </View>
+                      {favoriteKeys.has(scope.key) ? (
+                        <SymbolView
+                          name="star.fill"
+                          size={14}
+                          tintColorClassName="accent-icon-muted"
+                          type="monochrome"
+                        />
+                      ) : null}
                       <SymbolView
                         name="chevron.right"
                         size={14}

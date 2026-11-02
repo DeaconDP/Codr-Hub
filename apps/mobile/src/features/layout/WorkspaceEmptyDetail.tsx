@@ -1,3 +1,4 @@
+import { isPageTab } from "../workspace/navigation-tab-order";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { Platform, Pressable, View } from "react-native";
 
@@ -14,7 +15,7 @@ export function WorkspaceEmptyDetail(props: {
 }) {
   const pullRequests = props.tab === "pullRequests";
   const settings = props.tab === "settings";
-  if (props.tab === "usage") return <View className="flex-1 bg-screen" />;
+  if (props.tab && isPageTab(props.tab)) return <View className="flex-1 bg-screen" />;
   return (
     <View
       className={

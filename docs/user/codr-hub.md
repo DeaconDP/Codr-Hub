@@ -105,6 +105,8 @@ To use the Hub from a phone browser, join the phone to the same tailnet and conn
 
 To install the iPhone app instead, plug in and unlock the iPhone, then run `npm run codr:phone` in your Codr-Hub folder on a Mac with Xcode.
 
+The app has a **Hub** tab, as long as it is connected to a machine running Codr-Hub. **Ranked** lists open projects in portfolio order, and **Favourites** shows the ones you star. Tap a project to start a task in it. **Activity** shows commits per project for the window you pick, and a project on several machines counts once. Choosing a project for a new task lists your favourites first. To change priority or strategy, use the Hub in a browser.
+
 ## Always-on machines
 
 Run `npm run codr:always-on` in your Codr-Hub folder to start the Hub at login and keep it updated from upstream. `npm run codr:always-off` turns this off and leaves the running Hub alone.

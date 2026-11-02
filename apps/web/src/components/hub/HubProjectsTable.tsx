@@ -15,7 +15,11 @@ import { Button } from "../ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Input } from "../ui/input";
 import { HubProjectDialog } from "./HubProjectDialog";
-import { filterAndSortProjects, projectGlance, t3SyncSummary } from "./hubFormat";
+import {
+  filterAndSortProjects,
+  projectGlance,
+  t3SyncSummary,
+} from "@t3tools/client-runtime/codrHub/hubFormat";
 import { useHubAction } from "./useHubAction";
 
 /** Ranked projects. Tap a row to change it. Rank is the only order. */

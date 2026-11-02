@@ -27,7 +27,7 @@ import {
   StarIcon,
   TagIcon,
 } from "lucide-react";
-import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { PROJECT_ICON_COLORS, projectIconColorClassName } from "~/projectIconColors";
 import type { SidebarProjectPickerEntry } from "~/sidebarProjectGrouping";
@@ -68,7 +68,7 @@ import {
   rowMatches,
   rowTags,
   type PickerRow,
-} from "./projectPickerModel";
+} from "@t3tools/client-runtime/codrHub/projectPickerModel";
 
 type Row = PickerRow<SidebarProjectPickerEntry["group"]>;
 
@@ -136,36 +136,27 @@ export function HubProjectPicker(props: {
   const [pendingOrder, setPendingOrder] = useState<ReadonlyArray<string> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const entryByKey = useMemo(
-    () => new Map(props.entries.map((entry) => [entry.group.projectKey, entry])),
-    [props.entries],
+  const entryByKey = new Map(props.entries.map((entry) => [entry.group.projectKey, entry]));
+  const rows = linkPickerRows(
+    props.entries.map((entry) => entry.group),
+    hub.projects,
+    nodeNames,
   );
-  const rows = useMemo(
-    () =>
-      linkPickerRows(
-        props.entries.map((entry) => entry.group),
-        hub.projects,
-        nodeNames,
-      ),
-    [hub.projects, nodeNames, props.entries],
-  );
-  const sections = useMemo(() => {
-    const { favorites, others } = pickerSections(rows);
-    if (pendingOrder === null) return { favorites, others };
+  const { favorites, others } = pickerSections(rows);
+  if (pendingOrder !== null) {
     const rank = new Map(pendingOrder.map((key, index) => [key, index]));
     const byPending = (a: Row, b: Row) =>
       (rank.get(a.group.projectKey) ?? Infinity) - (rank.get(b.group.projectKey) ?? Infinity);
-    return { favorites: favorites.sort(byPending), others: others.sort(byPending) };
-  }, [pendingOrder, rows]);
-  const tags = useMemo(() => allPickerTags(rows), [rows]);
+    favorites.sort(byPending);
+    others.sort(byPending);
+  }
+  const sections = { favorites, others };
+  const tags = allPickerTags(rows);
   const filtering = query.trim() !== "" || tag !== null;
-  const visible = useMemo(
-    () => ({
-      favorites: sections.favorites.filter((row) => rowMatches(row, query, tag)),
-      others: sections.others.filter((row) => rowMatches(row, query, tag)),
-    }),
-    [query, sections, tag],
-  );
+  const visible = {
+    favorites: sections.favorites.filter((row) => rowMatches(row, query, tag)),
+    others: sections.others.filter((row) => rowMatches(row, query, tag)),
+  };
   const flat = [...visible.favorites, ...visible.others];
   const active = flat.find((row) => row.group.projectKey === activeKey) ?? flat[0] ?? null;
 
@@ -573,7 +564,7 @@ function PickerRowItem(props: {
             renameDoneRef.current = false;
           }}
           onBlur={commitOnce}
-          className="h-7 min-w-0 flex-1 rounded-sm border border-input bg-background px-1.5 text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          className="h-7 min-w-0 flex-1 rounded-sm border border-input bg-background px-1.5 text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         />
       ) : (
         <button
@@ -784,7 +775,7 @@ function MachineColorsDialog(props: {
                           aria-label={option.label}
                           disabled={!canSave}
                           onClick={() => void props.onPick(machine.label, option.value)}
-                          className={`size-5 rounded-full ${option.swatchClassName} ring-offset-2 ring-offset-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring aria-checked:ring-2 aria-checked:ring-foreground disabled:opacity-50`}
+                          className={`size-5 rounded-full ${option.swatchClassName} focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-checked:ring-2 aria-checked:ring-inset aria-checked:ring-foreground disabled:opacity-50`}
                         />
                       ),
                     )}

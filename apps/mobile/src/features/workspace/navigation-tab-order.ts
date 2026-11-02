@@ -1,5 +1,10 @@
-export const NAVIGATION_TAB_ORDER = ["threads", "pullRequests", "usage"] as const;
+export const NAVIGATION_TAB_ORDER = ["threads", "hub", "pullRequests", "usage"] as const;
 export type NavigationTab = (typeof NAVIGATION_TAB_ORDER)[number];
+
+/** A single page, with no list beside a detail column. */
+export function isPageTab(tab: string) {
+  return tab === "usage" || tab === "hub";
+}
 
 export function navigationCustomizationAvailable(
   registeredSections: number = NAVIGATION_TAB_ORDER.length,
@@ -9,6 +14,7 @@ export function navigationCustomizationAvailable(
 
 export const NAVIGATION_TAB_LABELS: Readonly<Record<NavigationTab, string>> = {
   threads: "Threads",
+  hub: "Hub",
   pullRequests: "Pulls",
   usage: "Usage",
 };

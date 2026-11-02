@@ -171,11 +171,12 @@ export function filterAndSortProjects(
     }
     return rank(a.project, b.project);
   };
+  // A fresh array from filter; Hermes has no toSorted.
   return views
     .filter(
       (view) => matchesFilter(view) && matchesQuery(view) && projectMatchesLane(view.project, lane),
     )
-    .toSorted(compare);
+    .sort(compare);
 }
 
 /** A short, file-safe id with a random suffix so two nodes adding the same title never collide. */
@@ -186,21 +187,6 @@ export function newStrategyId(title: string, random: string) {
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
   return `${slug || "priority"}-${random.slice(0, 6)}`;
-}
-
-/** Countdown to a future instant: "3h left", "Soon", or "Expired". */
-export function formatTimeUntilLabel(isoDate: string, nowMs: number = Date.now()): string {
-  const targetMs = Date.parse(isoDate);
-  if (Number.isNaN(targetMs)) return "";
-  const seconds = Math.floor((targetMs - nowMs) / 1000);
-  if (seconds <= 0) return "Expired";
-  if (seconds < 5) return "Soon";
-  if (seconds < 60) return `${seconds}s left`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m left`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h left`;
-  return `${Math.floor(hours / 24)}d left`;
 }
 
 /** One line for a T3 import or sync result; zero counts are left out. */

@@ -6,10 +6,12 @@ import {
   type HubSdlcMode,
   type ProjectIconColor,
 } from "@t3tools/contracts";
+import { HUB_ACTIVITY_WINDOWS } from "@t3tools/client-runtime/codrHub/hubActivity";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 import { isElectron } from "../../env";
+import { observeResize } from "../../lib/observeResize";
 import { useEscapeToGoBack } from "./useEscapeToGoBack";
 import { projectIconColorClassName } from "../../projectIconColors";
 import { useEnvironments } from "../../state/environments";
@@ -31,7 +33,6 @@ import {
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import {
-  HUB_ACTIVITY_WINDOWS,
   HUB_PLATFORM_COLORS,
   HUB_PLATFORM_ORDER,
   buildHubDashboard,
@@ -46,9 +47,9 @@ import {
   labelOf,
   stageOptions,
   stageSelectValue,
-} from "./hubFormat";
+} from "@t3tools/client-runtime/codrHub/hubFormat";
 import { squarifyTreemap, type TreemapRect } from "./hubTreemap";
-import { machineColor } from "./projectPickerModel";
+import { machineColor } from "@t3tools/client-runtime/codrHub/projectPickerModel";
 
 const MACHINE_GAP = 6;
 const MACHINE_HEADER = 30;
@@ -155,18 +156,14 @@ export function HubDashboardPage() {
 
   const settings = merged.anySnapshot?.settings;
   const strategy = merged.anySnapshot?.strategy;
-  const dashboard = useMemo(
-    () =>
-      buildHubDashboard({
-        projects: merged.projects,
-        insights: insights.insights,
-        strategy: strategy ?? [],
-        mode,
-        window: activityWindow,
-        hiddenPlatforms: hidden,
-      }),
-    [merged.projects, insights.insights, strategy, mode, activityWindow, hidden],
-  );
+  const dashboard = buildHubDashboard({
+    projects: merged.projects,
+    insights: insights.insights,
+    strategy: strategy ?? [],
+    mode,
+    window: activityWindow,
+    hiddenPlatforms: hidden,
+  });
 
   const togglePlatform = (platform: HubPlatform) =>
     setHidden((current) => {
@@ -357,21 +354,17 @@ function DashboardMap(props: {
 }) {
   const [element, setElement] = useState<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks the map element's DOM width, which sizes the treemap
   useEffect(() => {
     if (element === null) return;
     // The observer reports the initial size on observe.
-    const observer = new ResizeObserver((entries) => {
+    return observeResize(element, (entries) => {
       const next = entries[0]?.contentRect.width;
       if (next !== undefined) setWidth(Math.floor(next));
     });
-    observer.observe(element);
-    return () => observer.disconnect();
   }, [element]);
   const height = mapHeight(width);
-  const placed = useMemo(
-    () => (width > 0 ? layoutDashboard(props.dashboard, width, height) : []),
-    [props.dashboard, width, height],
-  );
+  const placed = width > 0 ? layoutDashboard(props.dashboard, width, height) : [];
   const windowLabel = labelOf(HUB_ACTIVITY_WINDOWS, props.window);
 
   return (
@@ -445,7 +438,7 @@ function ProjectTile(props: {
             to="/hub/projects/$projectId/board"
             params={{ projectId: tile.projectId }}
             aria-label={`${tile.name}, ${platformLabel}, ${commitsLabel(tile, props.windowLabel)}. Open board`}
-            className="absolute flex flex-col gap-0.5 overflow-hidden rounded-md p-1.5 text-left outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+            className="absolute flex flex-col gap-0.5 overflow-hidden rounded-md p-1.5 text-left outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             style={tileStyle(tile, rect)}
           />
         }

@@ -55,14 +55,6 @@ export const HUB_PLATFORM_COLORS: Record<
   other: { light: "#7c7b75", dark: "#6b6a64", inkLight: "ink", inkDark: "white" },
 };
 
-export const HUB_ACTIVITY_WINDOWS: ReadonlyArray<{ value: HubActivityWindow; label: string }> = [
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7d" },
-  { value: "30d", label: "30d" },
-  { value: "ytd", label: "YTD" },
-  { value: "all", label: "All" },
-];
-
 const PRIORITY_WEIGHT: Record<HubPriority, number> = {
   critical: 8,
   high: 5,

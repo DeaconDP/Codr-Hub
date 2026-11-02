@@ -4,7 +4,7 @@ import { useState } from "react";
 import { serverEnvironment } from "../../state/server";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
-import { formatTimeUntilLabel, PACE_STATE } from "./hubFormat";
+import { PACE_STATE } from "@t3tools/client-runtime/codrHub/hubFormat";
 import { useHubAction } from "./useHubAction";
 
 export function HubPacePanel(props: {
@@ -55,6 +55,21 @@ function RunOnce(props: { environmentId: EnvironmentId }) {
       </Button>
     </div>
   );
+}
+
+/** Countdown to a future instant: "3h left", "Soon", or "Expired". */
+function formatTimeUntilLabel(isoDate: string, nowMs: number = Date.now()): string {
+  const targetMs = Date.parse(isoDate);
+  if (Number.isNaN(targetMs)) return "";
+  const seconds = Math.floor((targetMs - nowMs) / 1000);
+  if (seconds <= 0) return "Expired";
+  if (seconds < 5) return "Soon";
+  if (seconds < 60) return `${seconds}s left`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m left`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h left`;
+  return `${Math.floor(hours / 24)}d left`;
 }
 
 function paceSummary(pace: HubPace) {
