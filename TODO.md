@@ -179,5 +179,6 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Activity: commit window, totals, commits per project, counting a project on two machines once
 - [x] Choose project: favourites first, then manual order, with a star
 - [x] Edit menu on each row: priority, status, stage, strategy, archive and unarchive; rank updates at once
+- [x] Pace view per machine: pace bars, autopilot switch, Run once and Deploy reset, with confirmations for anything that starts agents or spends a reset
 - [ ] Owner: try the Hub tab on the iPhone against a Codr-Hub server
 - [ ] Android pass: no emulator is installed on Steve

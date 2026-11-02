@@ -10,6 +10,7 @@ import {
   type HubLane,
   type HubMergedProjectView,
   type HubNodeCheckout,
+  type HubPace,
   type HubPaceState,
   type HubPriority,
   type HubProject,
@@ -91,12 +92,39 @@ function hostBit(node: HubNodeCheckout | undefined): string | null {
   return node.git.dirty ? `${branch} · changes` : branch;
 }
 
-export const PACE_STATE: Record<HubPaceState, string> = {
+const PACE_STATE: Record<HubPaceState, string> = {
   behind: "Behind pace",
   on_pace: "On pace",
   capped: "Capped",
   unavailable: "Unavailable",
 };
+
+/** Countdown to a future instant: "3h left", "Soon", or "Expired". */
+export function formatTimeUntilLabel(isoDate: string, nowMs: number): string {
+  const targetMs = Date.parse(isoDate);
+  if (Number.isNaN(targetMs)) return "";
+  const seconds = Math.floor((targetMs - nowMs) / 1000);
+  if (seconds <= 0) return "Expired";
+  if (seconds < 5) return "Soon";
+  if (seconds < 60) return `${seconds}s left`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m left`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h left`;
+  return `${Math.floor(hours / 24)}d left`;
+}
+
+export function paceSummary(pace: HubPace, nowMs: number): string {
+  const state = PACE_STATE[pace.state];
+  if (pace.usedPercent === null) return state;
+  const used = `${Math.round(pace.usedPercent)}%`;
+  const target =
+    pace.state === "behind" && pace.targetPercent !== null
+      ? ` of ${Math.round(pace.targetPercent)}%`
+      : "";
+  const reset = pace.resetsAt ? ` · resets ${formatTimeUntilLabel(pace.resetsAt, nowMs)}` : "";
+  return `${used}${target} · ${state}${reset}`;
+}
 
 export const labelOf = <V>(options: ReadonlyArray<{ value: V; label: string }>, value: V) =>
   options.find((option) => option.value === value)?.label ?? String(value);

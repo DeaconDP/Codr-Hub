@@ -3,11 +3,16 @@ import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { serverEnvironment } from "../../state/server";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 
-function useConnectedKey() {
+/** Connected environments, which may include T3 Code servers without the Hub. */
+export function useConnectedHubMachines() {
   const { connectedEnvironments } = useRemoteConnectionStatus();
-  const ids = connectedEnvironments
+  return connectedEnvironments
     .filter((environment) => environment.connectionState === "connected")
-    .map((environment) => environment.environmentId);
+    .map(({ environmentId, environmentLabel }) => ({ environmentId, label: environmentLabel }));
+}
+
+function useConnectedKey() {
+  const ids = useConnectedHubMachines().map((machine) => machine.environmentId);
   return { count: ids.length, key: JSON.stringify(ids) };
 }
 

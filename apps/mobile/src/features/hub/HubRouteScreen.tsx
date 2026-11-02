@@ -43,13 +43,15 @@ import {
   hubProjectPatchForAction,
   type HubProjectPatch,
 } from "./hubProjectMenu";
-import { useHubInsights, useHubPortfolio } from "./useHubPortfolio";
+import { HubMachinePace } from "./HubPaceView";
+import { useConnectedHubMachines, useHubInsights, useHubPortfolio } from "./useHubPortfolio";
 
-type HubView = "ranked" | "favorites" | "activity";
+type HubView = "ranked" | "favorites" | "activity" | "pace";
 const VIEW_OPTIONS = [
   { value: "ranked", label: "Ranked" },
   { value: "favorites", label: "Favourites" },
   { value: "activity", label: "Activity" },
+  { value: "pace", label: "Pace" },
 ] as const satisfies readonly { value: HubView; label: string }[];
 
 type Portfolio = ReturnType<typeof useHubPortfolio>;
@@ -58,6 +60,7 @@ export function HubRouteScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const portfolio = useHubPortfolio();
+  const machines = useConnectedHubMachines();
   const [view, setView] = useState<HubView>("ranked");
   const hasPortfolio = portfolio.anySnapshot !== null;
 
@@ -87,6 +90,19 @@ export function HubRouteScreen() {
           title="No projects yet"
           detail="Import your projects from Hub in the web app, or turn on Sync with T3 there."
         />
+      ) : view === "pace" ? (
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          showsVerticalScrollIndicator={false}
+          className="flex-1"
+          contentContainerClassName="gap-5 px-5 pt-4"
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+        >
+          <ViewPicker view={view} onSelect={setView} />
+          {machines.map((machine) => (
+            <HubMachinePace key={machine.environmentId} {...machine} />
+          ))}
+        </ScrollView>
       ) : view === "activity" ? (
         <ActivityView
           portfolio={portfolio}

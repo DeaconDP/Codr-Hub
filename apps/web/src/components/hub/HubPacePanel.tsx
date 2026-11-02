@@ -1,10 +1,11 @@
 import type { EnvironmentId, HubPace } from "@t3tools/contracts";
 import { useState } from "react";
 
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { serverEnvironment } from "../../state/server";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
-import { PACE_STATE } from "@t3tools/client-runtime/codrHub/hubFormat";
+import { formatTimeUntilLabel, paceSummary } from "@t3tools/client-runtime/codrHub/hubFormat";
 import { useHubAction } from "./useHubAction";
 
 export function HubPacePanel(props: {
@@ -57,34 +58,8 @@ function RunOnce(props: { environmentId: EnvironmentId }) {
   );
 }
 
-/** Countdown to a future instant: "3h left", "Soon", or "Expired". */
-function formatTimeUntilLabel(isoDate: string, nowMs: number = Date.now()): string {
-  const targetMs = Date.parse(isoDate);
-  if (Number.isNaN(targetMs)) return "";
-  const seconds = Math.floor((targetMs - nowMs) / 1000);
-  if (seconds <= 0) return "Expired";
-  if (seconds < 5) return "Soon";
-  if (seconds < 60) return `${seconds}s left`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m left`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h left`;
-  return `${Math.floor(hours / 24)}d left`;
-}
-
-function paceSummary(pace: HubPace) {
-  const state = PACE_STATE[pace.state];
-  if (pace.usedPercent === null) return state;
-  const used = `${Math.round(pace.usedPercent)}%`;
-  const target =
-    pace.state === "behind" && pace.targetPercent !== null
-      ? ` of ${Math.round(pace.targetPercent)}%`
-      : "";
-  const reset = pace.resetsAt ? ` · resets ${formatTimeUntilLabel(pace.resetsAt)}` : "";
-  return `${used}${target} · ${state}${reset}`;
-}
-
 function HubPaceRow({ environmentId, pace }: { environmentId: EnvironmentId; pace: HubPace }) {
+  const nowMs = Date.parse(`${useNowMinute()}Z`);
   return (
     <li className="flex flex-col gap-2 py-3">
       <div className="flex min-w-0 items-center gap-2">
@@ -95,19 +70,29 @@ function HubPaceRow({ environmentId, pace }: { environmentId: EnvironmentId; pac
         />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{pace.label}</p>
-          <p className="text-sm text-muted-foreground">{paceSummary(pace)}</p>
+          <p className="text-sm text-muted-foreground">{paceSummary(pace, nowMs)}</p>
         </div>
       </div>
       {pace.state !== "on_pace" ? (
         <p className="text-sm text-muted-foreground">{pace.reason}</p>
       ) : null}
-      {pace.bankedResets > 0 ? <BankedResets environmentId={environmentId} pace={pace} /> : null}
+      {pace.bankedResets > 0 ? (
+        <BankedResets environmentId={environmentId} pace={pace} nowMs={nowMs} />
+      ) : null}
     </li>
   );
 }
 
 /** Redeeming is irreversible, so it takes a second, explicit confirmation. */
-function BankedResets({ environmentId, pace }: { environmentId: EnvironmentId; pace: HubPace }) {
+function BankedResets({
+  environmentId,
+  pace,
+  nowMs,
+}: {
+  environmentId: EnvironmentId;
+  pace: HubPace;
+  nowMs: number;
+}) {
   const [confirming, setConfirming] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const deploy = useHubAction(
@@ -125,7 +110,7 @@ function BankedResets({ environmentId, pace }: { environmentId: EnvironmentId; p
       <span className="min-w-0 flex-1 text-sm text-muted-foreground">
         {pace.bankedResets} banked reset{pace.bankedResets === 1 ? "" : "s"}
         {pace.bankedResetExpiresAt
-          ? ` · expires ${formatTimeUntilLabel(pace.bankedResetExpiresAt)}`
+          ? ` · expires ${formatTimeUntilLabel(pace.bankedResetExpiresAt, nowMs)}`
           : ""}
       </span>
       {confirming ? (

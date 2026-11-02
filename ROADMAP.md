@@ -33,7 +33,7 @@ An always-on usage overlay or compact widget. Extra providers that T3 doesn't pr
 
 ### E6. Native mobile hub (in progress)
 
-Mobile comes first: the owner tests on the phone. The Hub tab has Ranked, Favourites and Activity; Choose project puts favourites first. Next: the rest of the web Hub (editing, pace, autopilot, test queue, board, strategy), then push notifications when autopilot work needs review.
+Mobile comes first: the owner tests on the phone. The Hub tab has Ranked, Favourites and Activity; Choose project puts favourites first. Next: the test queue, then the rest of the web Hub (board, strategy), then push notifications when autopilot work needs review.
 
 ### E7. Strategy and research layer
 
@@ -72,7 +72,7 @@ Done when agent work feels alive on chat and Hub, idle surfaces stay still, and 
 - 2026-10-28: Desktop auto-update (E8) waits for signed releases. The updater is already built, but `DeaconDP/Codr-Hub` has no releases, `release.yml` is not on `main`, and the repo is private. electron-updater can't read private releases without a baked-in token, and macOS won't apply an update to an unsigned app. To ship it: an Apple Developer ID cert with notarization, Windows signing, a public releases repo set as `T3CODE_DESKTOP_UPDATE_REPOSITORY`, and then flipping `setAutoDownload`/`setAutoInstallOnAppQuit` to true. Source nodes already self-update through the fleet parent. `apps/desktop/src/updates/DesktopUpdates.ts:932`
 
 - 2026-10-27: Mobile OTA updates and EAS are off until Codr-Hub has its own Expo project; the upstream `pingdotgg` owner and project ID were removed. To restore, create the project and set `owner`, `extra.eas.projectId` and `updates.url`. `apps/mobile/app.config.ts:243`
-- 2026-11-02: The native mobile Hub edits priority, status, stage, strategy link, favourites and archiving. Autonomy, adding projects, ordering strategy priorities, pace, autopilot, the test queue and boards still need the web Hub. Autonomy waits on purpose: at 100% it merges, so it should not be one mis-tap in a menu. `apps/mobile/src/features/hub/HubRouteScreen.tsx`
+- 2026-11-02: The native mobile Hub edits priority, status, stage, strategy link, favourites and archiving. It also shows pace per machine, switches the autopilot, runs it once and deploys banked resets. Autonomy, adding projects, ordering strategy priorities, the test queue and boards still need the web Hub. Autonomy waits on purpose: at 100% it merges, so it should not be one mis-tap in a menu. `apps/mobile/src/features/hub/HubRouteScreen.tsx`
 - 2026-11-02: `vp run mobile:install ios` still builds `T3CodeDev.xcworkspace`, which the fork renamed to `CodrHubDev`, so it fails. `scripts/mobile-native-client.ts:718`
 - 2026-10-27: Mobile "Choose project" orders by favourites and manual order with a star, but tags, tag filter, reordering and machine colours are web only, and the command palette's project list doesn't use the order. `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx`
 - 2026-10-27: The picker still starts a thread on the group's preferred checkout; picking a specific machine from its colour icon is not wired. `apps/web/src/components/hub/HubProjectPicker.tsx`
