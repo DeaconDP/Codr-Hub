@@ -28,7 +28,7 @@ export function WorkspaceEmptyDetail(props: {
         <View className="w-full max-w-[430px]">
           <EmptyState
             title="No environments connected"
-            detail="Add an environment to load projects and start coding sessions."
+            detail="Add one machine on your tailnet and the rest sync automatically."
             variant="plain"
             action={
               <FloatingActionButton

@@ -51,6 +51,8 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Focused multi-node git and service concurrency tests (15 passed), server typecheck, targeted lint
 - [ ] Owner: verify Save & sync on each real mesh node
 - [ ] E2: other Codr-Hub machines on the same Tailscale account show up while the app is open
+- [x] Mobile: join the first tailnet machine by address alone (no pairing code); the rest sync via the mesh layer
+- [ ] Owner: on the phone, Add environment → enter one `*.ts.net` address, empty code → confirm the other machines appear
 
 ## E2: Shared subscription pacing
 

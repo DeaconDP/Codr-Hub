@@ -5,6 +5,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import {
@@ -14,7 +16,13 @@ import {
   type ConnectionCatalogEntry,
 } from "../connection/catalog.ts";
 import * as ConnectionCredentialStore from "../connection/credentialStore.ts";
-import { BearerConnectionTarget } from "../connection/model.ts";
+import { BearerConnectionTarget, ConnectionBlockedError } from "../connection/model.ts";
+import {
+  deriveWsBaseUrl,
+  environmentEndpointUrl,
+  normalizeHttpBaseUrl,
+} from "../environment/endpoint.ts";
+import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 import { bearerConnectionId } from "../connection/onboarding.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import {
@@ -164,6 +172,67 @@ const linkTailnetMesh = Effect.fn("codrHub.linkTailnetMesh")(function* () {
     Effect.repeat(Schedule.spaced(Duration.seconds(60))),
   );
 });
+
+const TailnetJoinResponse = Schema.Struct({ accessToken: Schema.NonEmptyString });
+
+const tailnetJoinFailed = (host: string) =>
+  new ConnectionBlockedError({
+    reason: "configuration",
+    detail: `Couldn't join ${host} over Tailscale. Check the phone is on your tailnet and the machine serves Codr-Hub with Tailscale Serve, or enter a pairing code.`,
+  });
+
+/**
+ * Saves the machine at a tailnet address without a pairing code. The server admits only
+ * tailnet sockets. Once saved, the mesh layer saves the account's other machines.
+ */
+export const joinTailnetHost = Effect.fn("codrHub.linkTailnetMesh.joinHost")(function* (
+  host: string,
+) {
+  const trimmed = host.trim();
+  const failed = () => tailnetJoinFailed(trimmed);
+  const httpBaseUrl = yield* Effect.try({
+    try: () =>
+      normalizeHttpBaseUrl(
+        new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`).origin,
+      ),
+    catch: failed,
+  });
+  const descriptor = yield* fetchRemoteEnvironmentDescriptor({ httpBaseUrl }).pipe(
+    Effect.mapError(failed),
+  );
+  const client = yield* HttpClient.HttpClient;
+  const joined = yield* client
+    .post(environmentEndpointUrl(httpBaseUrl, "/.well-known/t3/tailnet/join"))
+    .pipe(
+      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.flatMap(HttpClientResponse.schemaBodyJson(TailnetJoinResponse)),
+      Effect.timeout(Duration.seconds(10)),
+      Effect.mapError(failed),
+    );
+  const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+  const connectionId = bearerConnectionId(descriptor.environmentId, httpBaseUrl);
+  yield* registry.register(
+    new BearerConnectionRegistration({
+      target: new BearerConnectionTarget({
+        environmentId: descriptor.environmentId,
+        label: descriptor.label,
+        connectionId,
+      }),
+      profile: new BearerConnectionProfile({
+        connectionId,
+        environmentId: descriptor.environmentId,
+        label: descriptor.label,
+        httpBaseUrl,
+        wsBaseUrl: deriveWsBaseUrl(httpBaseUrl),
+      }),
+      credential: new BearerConnectionCredential({ token: joined.accessToken }),
+    }),
+  );
+  yield* registry
+    .setEnabled(descriptor.environmentId, true)
+    .pipe(Effect.catchTags({ EnvironmentNotRegisteredError: () => Effect.void }));
+  return descriptor.environmentId;
+}, Effect.provide(FetchHttpClient.layer));
 
 export const linkTailnetMeshLayer = Layer.effectDiscard(
   linkTailnetMesh().pipe(

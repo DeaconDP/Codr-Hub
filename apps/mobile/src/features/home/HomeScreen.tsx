@@ -158,7 +158,7 @@ function deriveEmptyState(props: {
   if (!catalogState.hasConnections) {
     return {
       title: "No environments connected",
-      detail: "Add an environment to load projects and start coding sessions.",
+      detail: "Add one machine on your tailnet and the rest sync automatically.",
       loading: false,
     };
   }

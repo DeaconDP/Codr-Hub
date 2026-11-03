@@ -32,6 +32,7 @@ import { autoConnectReport, devAutoConnectAttemptAtom } from "./devAutoConnect";
 import { splitEnvironmentSections } from "./environmentSections";
 import { leaveSettingsPage } from "../settings/settings-navigation";
 import { workspaceHasColumns } from "../workspace/workspace-selection-store";
+import { joinTailnetEnvironment } from "../../connection/tailnetJoin";
 
 type ConnectionsNewRouteParams = {
   readonly mode?: string;
@@ -157,7 +158,10 @@ function PairingForm({
     setSubmitError(null);
     setIsSubmitting(true);
     onChangeConnectionPairingUrl(pairingUrl);
-    const outcome = await onConnectPress(pairingUrl, routeFor);
+    const outcome =
+      codeInput.trim() === "" && routeFor === undefined
+        ? await joinTailnetEnvironment(hostInput)
+        : await onConnectPress(pairingUrl, routeFor);
     setIsSubmitting(false);
     setSubmitError(outcome.error);
     void Haptics.notificationAsync(
@@ -250,7 +254,7 @@ function PairingForm({
               )}
             >
               {pairingConnectionError ??
-                "For machines on your local network or tailnet. The machine keeps its own provider credentials."}
+                "On your tailnet, enter one machine's address (like pc.tail1234.ts.net) and leave the code empty. Your other Tailscale machines then sync in."}
             </Text>
           </View>
 

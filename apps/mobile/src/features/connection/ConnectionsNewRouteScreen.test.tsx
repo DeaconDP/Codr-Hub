@@ -66,6 +66,7 @@ vi.mock("./CloudEnvironmentRows", () => ({ CloudEnvironmentRows: () => null }));
 vi.mock("./environmentSections", () => ({
   splitEnvironmentSections: () => ({ connectedCloudEnvironments: [] }),
 }));
+vi.mock("../../connection/tailnetJoin", () => ({ joinTailnetEnvironment: vi.fn() }));
 vi.mock("./devAutoConnect", () => ({
   autoConnectReport: () => ({ connecting: false, error: null }),
   devAutoConnectAttemptAtom: {},
@@ -96,7 +97,7 @@ it("does not show another feature's error as a pairing failure", () => {
   act(() => root.render(<ConnectionsNewRouteScreen route={{ params: undefined }} />));
 
   expect(container.textContent).not.toContain("Could not send the message.");
-  expect(container.textContent).toContain("For machines on your local network or tailnet.");
+  expect(container.textContent).toContain("leave the code empty");
 
   act(() => root.unmount());
   // Leaving the form must not wipe an error that belongs to another screen.
