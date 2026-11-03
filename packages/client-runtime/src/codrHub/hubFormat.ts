@@ -153,7 +153,19 @@ export function stageSelectValue(stage: HubSdlcStage, mode: HubSdlcMode): HubSdl
 
 export type HubProjectFilter = "open" | "all" | HubProjectStatus | "archived";
 
-export type HubProjectSort = "rank" | "name" | "recent";
+export const SORT_OPTIONS = [
+  { value: "rank", label: "Rank" },
+  { value: "recent", label: "Recent" },
+  { value: "favorites", label: "Favourites" },
+  { value: "priority", label: "Priority" },
+  { value: "status", label: "Status" },
+  { value: "name", label: "Name" },
+] as const;
+
+export type HubProjectSort = (typeof SORT_OPTIONS)[number]["value"];
+
+const optionIndex = <V extends string>(options: ReadonlyArray<{ value: V }>, value: V) =>
+  options.findIndex((option) => option.value === value);
 
 /** "Open" hides done and archived work, which is what the owner scans day to day. */
 export function filterAndSortProjects(
@@ -190,15 +202,34 @@ export function filterAndSortProjects(
       ...view.nodes.flatMap((node) => [node.nodeName, node.localPath ?? ""]),
     ].some((text) => text.toLowerCase().includes(query));
   const rank = compareHubProjects(options.strategy);
-  const compare = (a: HubMergedProjectView, b: HubMergedProjectView) => {
-    if (options.sort === "name") return a.project.name.localeCompare(b.project.name);
-    if (options.sort === "recent") {
-      const aAt = mergedProjectLastLaunchAt(a) ?? a.project.updatedAt;
-      const bAt = mergedProjectLastLaunchAt(b) ?? b.project.updatedAt;
-      return bAt.localeCompare(aAt);
+  // Ties fall back to rank, so each grouping sort still reads in portfolio order.
+  const primary = (a: HubMergedProjectView, b: HubMergedProjectView) => {
+    switch (options.sort) {
+      case "name":
+        return a.project.name.localeCompare(b.project.name);
+      case "recent": {
+        const aAt = mergedProjectLastLaunchAt(a) ?? a.project.updatedAt;
+        const bAt = mergedProjectLastLaunchAt(b) ?? b.project.updatedAt;
+        return bAt.localeCompare(aAt);
+      }
+      case "favorites":
+        return Number(b.project.favorite) - Number(a.project.favorite);
+      case "priority":
+        return (
+          optionIndex(PRIORITY_OPTIONS, a.project.priority) -
+          optionIndex(PRIORITY_OPTIONS, b.project.priority)
+        );
+      case "status":
+        return (
+          optionIndex(STATUS_OPTIONS, a.project.status) -
+          optionIndex(STATUS_OPTIONS, b.project.status)
+        );
+      case "rank":
+        return 0;
     }
-    return rank(a.project, b.project);
   };
+  const compare = (a: HubMergedProjectView, b: HubMergedProjectView) =>
+    primary(a, b) || rank(a.project, b.project);
   // A fresh array from filter; Hermes has no toSorted.
   return views
     .filter(

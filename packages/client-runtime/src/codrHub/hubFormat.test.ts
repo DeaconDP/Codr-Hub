@@ -97,6 +97,20 @@ describe("hub project list", () => {
     );
   });
 
+  it("sorts by favourite, priority, or status, keeping rank within each group", () => {
+    const grouped = [
+      view({ id: "low-fav", name: "A", priority: "low", favorite: true, status: "paused" }),
+      view({ id: "high", name: "B", priority: "high", status: "idea" }),
+      view({ id: "medium", name: "C", priority: "medium", status: "active" }),
+      view({ id: "crit-fav", name: "D", priority: "critical", favorite: true, status: "idea" }),
+    ];
+    const sorted = (sort: "favorites" | "priority" | "status") =>
+      ids(filterAndSortProjects(grouped, { ...base, filter: "all", sort }));
+    expect(sorted("favorites")).toEqual(["crit-fav", "low-fav", "high", "medium"]);
+    expect(sorted("priority")).toEqual(["crit-fav", "high", "medium", "low-fav"]);
+    expect(sorted("status")).toEqual(["medium", "crit-fav", "high", "low-fav"]);
+  });
+
   it("sorts by name or most recent activity", () => {
     expect(ids(filterAndSortProjects(views, { ...base, filter: "all", sort: "name" }))).toEqual([
       "a",

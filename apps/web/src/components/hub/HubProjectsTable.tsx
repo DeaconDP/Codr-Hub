@@ -14,15 +14,19 @@ import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Input } from "../ui/input";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { HubProjectDialog } from "./HubProjectDialog";
 import {
   filterAndSortProjects,
+  labelOf,
   projectGlance,
+  SORT_OPTIONS,
   t3SyncSummary,
+  type HubProjectSort,
 } from "@t3tools/client-runtime/codrHub/hubFormat";
 import { useHubAction } from "./useHubAction";
 
-/** Ranked projects. Tap a row to change it. Rank is the only order. */
+/** Projects, ranked by default. Tap a row to change it; the number is always its rank. */
 export function HubProjectsTable(props: {
   readonly environmentId: EnvironmentId;
   readonly snapshot: HubSnapshot;
@@ -32,6 +36,7 @@ export function HubProjectsTable(props: {
   const { snapshot, environmentId, projects, selectedNodeName } = props;
   const [query, setQuery] = useState("");
   const [showFinished, setShowFinished] = useState(false);
+  const [sort, setSort] = useState<HubProjectSort>("rank");
   const [editing, setEditing] = useState<HubMergedProjectView | "new" | null>(null);
   const importDeez = useHubAction(
     serverEnvironment.hubImport,
@@ -45,12 +50,26 @@ export function HubProjectsTable(props: {
   );
   const [importNote, setImportNote] = useState<string | null>(null);
 
+  const filter = showFinished ? "all" : "open";
   const rows = filterAndSortProjects(projects, {
-    filter: showFinished ? "all" : "open",
-    sort: "rank",
+    filter,
+    sort,
     query,
     strategy: snapshot.strategy,
   });
+  const rankById = new Map(
+    filterAndSortProjects(projects, {
+      filter,
+      sort: "rank",
+      query: "",
+      strategy: snapshot.strategy,
+    }).map((view, index) => [view.project.id, index + 1]),
+  );
+  const toggleFavorite = useHubAction(
+    serverEnvironment.hubUpsertProject,
+    environmentId,
+    "Could not update favourite",
+  );
   const finishedCount = projects.filter(
     (view) => view.project.archived || view.project.status === "done",
   ).length;
@@ -138,6 +157,26 @@ export function HubProjectsTable(props: {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
+            <div className="w-36 shrink-0">
+              <Select
+                value={sort}
+                onValueChange={(next) => {
+                  const option = SORT_OPTIONS.find((entry) => entry.value === next);
+                  if (option) setSort(option.value);
+                }}
+              >
+                <SelectTrigger aria-label="Sort projects">
+                  <SelectValue>Sort: {labelOf(SORT_OPTIONS, sort)}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  {SORT_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </div>
             <Button size="sm" onClick={() => setEditing("new")}>
               Add
             </Button>
@@ -153,14 +192,20 @@ export function HubProjectsTable(props: {
             </p>
           ) : (
             <ol className="flex flex-col divide-y border-y">
-              {rows.map((view, index) => (
+              {rows.map((view) => (
                 <li key={view.project.id}>
                   <ProjectRow
-                    index={index}
+                    rank={rankById.get(view.project.id) ?? null}
                     view={view}
                     snapshot={snapshot}
                     selectedNodeName={selectedNodeName}
                     onEdit={() => setEditing(view)}
+                    onToggleFavorite={() =>
+                      void toggleFavorite.run({
+                        id: view.project.id,
+                        favorite: !view.project.favorite,
+                      })
+                    }
                   />
                 </li>
               ))}
@@ -219,11 +264,12 @@ export function HubProjectsTable(props: {
 }
 
 function ProjectRow(props: {
-  readonly index: number;
+  readonly rank: number | null;
   readonly view: HubMergedProjectView;
   readonly snapshot: HubSnapshot;
   readonly selectedNodeName: string;
   readonly onEdit: () => void;
+  readonly onToggleFavorite: () => void;
 }) {
   const { project } = props.view;
   const selected = props.view.nodes.find((node) => node.nodeName === props.selectedNodeName);
@@ -237,13 +283,10 @@ function ProjectRow(props: {
           className="flex w-full min-w-0 items-start gap-3 text-start focus-visible:outline-2 focus-visible:outline-ring"
         >
           <span className="w-6 shrink-0 pt-0.5 text-sm text-muted-foreground tabular-nums">
-            {props.index + 1}
+            {props.rank ?? "–"}
           </span>
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5 font-medium text-foreground">
-              {project.favorite ? (
-                <StarIcon aria-label="Favourite" className="size-3.5 shrink-0 fill-current" />
-              ) : null}
               <span className="truncate">{project.name}</span>
               {running > 0 ? <RunningBadge count={running} /> : null}
             </span>
@@ -264,6 +307,19 @@ function ProjectRow(props: {
           host={project.hosts[props.selectedNodeName]}
         />
       </div>
+      <Button
+        size="icon-xs"
+        variant="ghost-muted"
+        aria-label={
+          project.favorite
+            ? `Remove ${project.name} from favourites`
+            : `Add ${project.name} to favourites`
+        }
+        aria-pressed={project.favorite}
+        onClick={props.onToggleFavorite}
+      >
+        <StarIcon className={project.favorite ? "fill-current text-foreground" : undefined} />
+      </Button>
       <Button
         size="xs"
         variant="ghost-muted"

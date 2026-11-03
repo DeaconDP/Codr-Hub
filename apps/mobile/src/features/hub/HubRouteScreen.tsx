@@ -7,6 +7,8 @@ import {
   labelOf,
   PRIORITY_OPTIONS,
   projectGlance,
+  SORT_OPTIONS,
+  type HubProjectSort,
 } from "@t3tools/client-runtime/codrHub/hubFormat";
 import {
   hubWriteEnvironment,
@@ -62,6 +64,7 @@ export function HubRouteScreen() {
   const portfolio = useHubPortfolio();
   const machines = useConnectedHubMachines();
   const [view, setView] = useState<HubView>("ranked");
+  const [sort, setSort] = useState<HubProjectSort>("rank");
   const hasPortfolio = portfolio.anySnapshot !== null;
 
   return (
@@ -118,7 +121,12 @@ export function HubRouteScreen() {
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         >
           <ViewPicker view={view} onSelect={setView} />
-          <ProjectList portfolio={portfolio} favoritesOnly={view === "favorites"} />
+          <ProjectList
+            portfolio={portfolio}
+            favoritesOnly={view === "favorites"}
+            sort={sort}
+            onSort={setSort}
+          />
         </ScrollView>
       )}
     </SettingsScreen>
@@ -136,8 +144,13 @@ function ViewPicker(props: { view: HubView; onSelect: (view: HubView) => void })
   );
 }
 
-function ProjectList(props: { portfolio: Portfolio; favoritesOnly: boolean }) {
-  const { portfolio, favoritesOnly } = props;
+function ProjectList(props: {
+  portfolio: Portfolio;
+  favoritesOnly: boolean;
+  sort: HubProjectSort;
+  onSort: (sort: HubProjectSort) => void;
+}) {
+  const { portfolio, favoritesOnly, sort } = props;
   const snapshot = portfolio.anySnapshot!;
   const t3Projects = useProjects();
   const selectDetail = useSelectWorkspaceDetail();
@@ -156,20 +169,18 @@ function ProjectList(props: { portfolio: Portfolio; favoritesOnly: boolean }) {
           const edit = pendingEdits.get(view.project.id);
           return edit ? { ...view, project: { ...view.project, ...edit } } : view;
         });
-  const inRankOrder = (filter: "open" | "all") =>
-    filterAndSortProjects(projects, {
-      filter,
-      sort: "rank",
-      query: "",
-      strategy: snapshot.strategy,
-    });
+  const sorted = (filter: "open" | "all", by: HubProjectSort) =>
+    filterAndSortProjects(projects, { filter, sort: by, query: "", strategy: snapshot.strategy });
   const isFinished = ({ project }: HubMergedProjectView) =>
     project.archived || project.status === "done";
-  const finished = inRankOrder("all").filter(isFinished);
-  // Rank is the open portfolio's, so a favourite shows the same number in both lists and
+  const finished = sorted("all", sort).filter(isFinished);
+  // Rank is the open portfolio's, so a project keeps its number in every list and sort, and
   // showing finished work never renumbers it.
+  const rankById = new Map(
+    sorted("open", "rank").map((view, index) => [view.project.id, index + 1]),
+  );
   const rows = [
-    ...inRankOrder("open").map((view, index) => ({ view, rank: (index + 1) as number | null })),
+    ...sorted("open", sort).map((view) => ({ view, rank: rankById.get(view.project.id) ?? null })),
     ...(showFinished ? finished.map((view) => ({ view, rank: null })) : []),
   ].filter((row) => !favoritesOnly || row.view.project.favorite);
 
@@ -215,6 +226,36 @@ function ProjectList(props: { portfolio: Portfolio; favoritesOnly: boolean }) {
 
   return (
     <View className="gap-3">
+      <View className="flex-row justify-end">
+        <Menu
+          title="Sort by"
+          actions={SORT_OPTIONS.map((option) => ({
+            id: option.value,
+            title: option.label,
+            state: option.value === sort ? "on" : "off",
+          }))}
+          onPressAction={({ nativeEvent }) => {
+            const next = SORT_OPTIONS.find((option) => option.value === nativeEvent.event);
+            if (next) props.onSort(next.value);
+          }}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Sort by ${labelOf(SORT_OPTIONS, sort)}`}
+            className="min-h-11 flex-row items-center gap-1.5 px-1"
+          >
+            <Text className="text-sm text-foreground-muted">
+              Sort: {labelOf(SORT_OPTIONS, sort)}
+            </Text>
+            <SymbolView
+              name="chevron.down"
+              size={12}
+              tintColorClassName="accent-icon-subtle"
+              type="monochrome"
+            />
+          </Pressable>
+        </Menu>
+      </View>
       <View collapsable={false} className="overflow-hidden rounded-[24px] bg-grouped-card">
         {rows.map(({ view, rank }, index) => {
           const target = t3ProjectForHubView(view, t3Projects, portfolio.nodeNameByEnvironmentId);
