@@ -1,6 +1,8 @@
-// "Update from T3 Code": merge `upstream/main` into this server's checkout and push to
-// `origin`; fleet parents (`scripts/codr-hub-fleet/`) fast-forward from there, so the push
-// is the whole fan-out. A conflict is aborted and reported, never left mid-merge.
+/**
+ * "Update from T3 Code": merges `upstream/main` into this server's source
+ * checkout and pushes to `origin`; fleet parents fan it out from there.
+ * A conflicting merge is aborted, never left in progress.
+ */
 import { HubError, type HubUpstreamMergeResult, type HubUpstreamStatus } from "@t3tools/contracts";
 import type * as Duration from "effect/Duration";
 import * as Clock from "effect/Clock";
@@ -27,17 +29,23 @@ type Requirements = ProcessRunner | FileSystem.FileSystem | Path.Path;
 
 const firstLine = (text: string) => text.trim().split("\n")[0] ?? "";
 
-const run = Effect.fn("codrHub.upstreamSync.git")(function* (
-  cwd: string,
-  args: ReadonlyArray<string>,
-  timeout: Duration.Input = "30 seconds",
-) {
-  const runner = yield* ProcessRunner;
-  // No credential prompts: a server has no terminal to answer them.
-  return yield* runner
-    .run({ command: "git", args, cwd, timeout, env: { GIT_TERMINAL_PROMPT: "0" } })
-    .pipe(Effect.mapError((cause) => new HubError({ message: `git ${args[0]} failed.`, cause })));
-});
+const run = Effect.fn("codrHub.upstreamSync.git")(
+  function* (cwd: string, args: ReadonlyArray<string>, timeout: Duration.Input | undefined) {
+    const runner = yield* ProcessRunner;
+    // No credential prompts: a server has no terminal to answer them.
+    return yield* runner.run({
+      command: "git",
+      args,
+      cwd,
+      timeout: timeout ?? "30 seconds",
+      env: { GIT_TERMINAL_PROMPT: "0" },
+    });
+  },
+  (effect, _cwd, args, _timeout) =>
+    effect.pipe(
+      Effect.mapError((cause) => new HubError({ message: `git ${args[0]} failed.`, cause })),
+    ),
+);
 
 const runOk = (cwd: string, args: ReadonlyArray<string>, timeout?: Duration.Input) =>
   run(cwd, args, timeout).pipe(
@@ -66,9 +74,11 @@ type Checkout =
 
 /** The checkout containing `startDir`, if it is a git checkout with an `upstream` remote. */
 const locate = Effect.fnUntraced(function* (startDir: string) {
-  const top = yield* run(startDir, ["rev-parse", "--show-toplevel", "--absolute-git-dir"]).pipe(
-    Effect.orElseSucceed(() => null),
-  );
+  const top = yield* run(
+    startDir,
+    ["rev-parse", "--show-toplevel", "--absolute-git-dir"],
+    undefined,
+  ).pipe(Effect.orElseSucceed(() => null));
   if (top === null || top.code !== 0) {
     const checkout: Checkout = {
       _tag: "Unavailable",
@@ -77,7 +87,7 @@ const locate = Effect.fnUntraced(function* (startDir: string) {
     return checkout;
   }
   const [root = "", gitDir = ""] = top.stdout.trim().split("\n");
-  const remote = yield* run(root, ["remote", "get-url", UPSTREAM_REMOTE]);
+  const remote = yield* run(root, ["remote", "get-url", UPSTREAM_REMOTE], undefined);
   if (remote.code !== 0) {
     const checkout: Checkout = {
       _tag: "Unavailable",

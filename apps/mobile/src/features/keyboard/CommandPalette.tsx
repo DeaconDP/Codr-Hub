@@ -333,6 +333,13 @@ export function CommandPalette(props: {
         run: () => openSettings(navigation, "SettingsScheduledTasks"),
       },
       {
+        key: "hub",
+        kind: "action",
+        title: "Hub",
+        searchTerms: ["projects", "favourites", "favorites", "ranked", "analytics", "activity"],
+        run: () => selectTab("hub"),
+      },
+      {
         key: "usage",
         kind: "action",
         title: "Usage",

@@ -291,7 +291,9 @@ export function HubSettingsPanel(props: {
                 onBlur={(event) => {
                   const value = event.target.value.trim();
                   if (value === (settings.stagePrompts[stage] ?? "")) return;
-                  const { [stage]: _previous, ...rest } = settings.stagePrompts;
+                  const rest = Object.fromEntries(
+                    Object.entries(settings.stagePrompts).filter(([key]) => key !== stage),
+                  );
                   void update.run({
                     stagePrompts: value === "" ? rest : { ...rest, [stage]: value },
                   });

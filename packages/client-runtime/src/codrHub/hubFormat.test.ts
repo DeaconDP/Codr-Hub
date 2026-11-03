@@ -1,14 +1,16 @@
-import type { HubMergedProjectView, HubProject } from "@t3tools/contracts";
+import type { HubMergedProjectView, HubPace, HubProject } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   filterAndSortProjects,
+  formatTimeUntilLabel,
   newStrategyId,
+  paceSummary,
   projectGlance,
   stageOptions,
   stageSelectValue,
   t3SyncSummary,
-} from "./hubFormat";
+} from "./hubFormat.ts";
 
 const view = (
   overrides: Partial<HubProject>,
@@ -24,6 +26,10 @@ const view = (
     category: null,
     tags: [],
     repoUrl: null,
+    previewUrl: null,
+    liveUrl: null,
+    siteId: null,
+    surface: null,
     notes: "",
     hosts: {},
     autonomy: 0,
@@ -185,5 +191,29 @@ describe("t3SyncSummary", () => {
     expect(t3SyncSummary({ imported: 0, updated: 0, skipped: 4, created: 0 })).toBe(
       "Already in step with T3.",
     );
+  });
+});
+
+describe("pace text", () => {
+  const now = Date.parse("2026-11-02T12:00:00.000Z");
+  const pace = (patch: Partial<HubPace>) =>
+    ({ state: "on_pace", usedPercent: 40, targetPercent: 50, resetsAt: null, ...patch }) as HubPace;
+
+  it.each([
+    ["2026-11-02T11:59:00.000Z", "Expired"],
+    ["2026-11-02T12:00:03.000Z", "Soon"],
+    ["2026-11-02T15:30:00.000Z", "3h left"],
+    ["2026-11-05T13:00:00.000Z", "3d left"],
+    ["not a date", ""],
+  ])("counts down to %s", (at, label) => {
+    expect(formatTimeUntilLabel(at, now)).toBe(label);
+  });
+
+  it("names the target only when behind, and the reset only when known", () => {
+    expect(paceSummary(pace({}), now)).toBe("40% · On pace");
+    expect(paceSummary(pace({ state: "behind", resetsAt: "2026-11-02T14:00:00.000Z" }), now)).toBe(
+      "40% of 50% · Behind pace · resets 2h left",
+    );
+    expect(paceSummary(pace({ state: "unavailable", usedPercent: null }), now)).toBe("Unavailable");
   });
 });

@@ -52,7 +52,10 @@ describe("codr-hub T3 import", () => {
       name: "Emily OS",
       githubUrl: "https://github.com/DeaconDP/Emily-OS",
     });
-    const byName = { ...hub({ name: "Fuel Gauge" }), hosts: { Edgar: { path: "C:/fuel" } } };
+    const byName = {
+      ...hub({ name: "Fuel Gauge" }),
+      hosts: { Edgar: { path: "C:/fuel", stickyPort: null, launchCmd: null } },
+    };
     const result = mergeT3Import(
       [byRepo, byName],
       [
@@ -63,27 +66,43 @@ describe("codr-hub T3 import", () => {
     );
     expect(result).toMatchObject({ imported: 0, updated: 2 });
     expect(result.upserts.map((project) => [project.id, project.hosts])).toEqual([
-      ["emily-os", { Steve: { path: "/w/emily" } }],
-      ["fuel-gauge", { Edgar: { path: "C:/fuel" }, Steve: { path: "/w/fuel" } }],
+      ["emily-os", { Steve: { path: "/w/emily", stickyPort: null, launchCmd: null } }],
+      [
+        "fuel-gauge",
+        {
+          Edgar: { path: "C:/fuel", stickyPort: null, launchCmd: null },
+          Steve: { path: "/w/fuel", stickyPort: null, launchCmd: null },
+        },
+      ],
     ]);
   });
 
   it("replaces a missing checkout and ignores a second clone of a linked project", () => {
-    const stale = hub({ name: "Emily-OS", localPath: "/old/Emily-OS" });
+    const stale = hub({
+      name: "Emily-OS",
+      localPath: "/old/Emily-OS",
+      stickyPort: 5173,
+      launchCmd: "npm run dev",
+    });
     const result = mergeT3Import(
       [stale],
       [t3("Emily-OS", "/w/Emily-OS"), t3("Emily-OS", "/w/Emily-OS-copy")],
       { ...context, missingPathIds: new Set(["emily-os"]) },
     );
     expect(result).toMatchObject({ imported: 0, updated: 1, skipped: 1 });
-    expect(result.upserts[0]?.hosts).toEqual({ Steve: { path: "/w/Emily-OS" } });
+    expect(result.upserts[0]?.hosts).toEqual({
+      Steve: { path: "/w/Emily-OS", stickyPort: 5173, launchCmd: "npm run dev" },
+    });
   });
 
   it("plans T3 projects only for live, unlinked checkouts on this node", () => {
     const linked = hub({ name: "Linked", localPath: "/w/linked" });
     const fresh = hub({ name: "Fresh", localPath: "/w/fresh" });
     const twin = hub({ name: "Twin", localPath: "/w/fresh/" });
-    const elsewhere = { ...hub({ name: "Elsewhere" }), hosts: { Edgar: { path: "/e/x" } } };
+    const elsewhere = {
+      ...hub({ name: "Elsewhere" }),
+      hosts: { Edgar: { path: "/e/x", stickyPort: null, launchCmd: null } },
+    };
     const archived = { ...hub({ name: "Old", localPath: "/w/old" }), archived: true };
     const gone = hub({ name: "Gone", localPath: "/w/gone" });
     const plan = planT3Creates(

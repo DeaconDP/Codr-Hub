@@ -50,7 +50,7 @@ import {
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { isSamePlacement, moveNeighbors } from "./hubBoardMove";
-import { PRIORITY_OPTIONS } from "./hubFormat";
+import { PRIORITY_OPTIONS } from "@t3tools/client-runtime/codrHub/hubFormat";
 import { useEscapeToGoBack } from "./useEscapeToGoBack";
 import { useHubAction } from "./useHubAction";
 

@@ -120,6 +120,50 @@ export interface PickerWrite {
   readonly input: HubUpsertProjectInput;
 }
 
+function byPrimaryFirst(
+  nodeNameByEnvironmentId: ReadonlyMap<EnvironmentId, string>,
+  primaryEnvironmentId: EnvironmentId | null,
+): EnvironmentId[] {
+  return [...nodeNameByEnvironmentId.keys()].sort(
+    (a, b) => Number(b === primaryEnvironmentId) - Number(a === primaryEnvironmentId),
+  );
+}
+
+/** The connected environment whose portfolio has this project, preferring the primary one. */
+export function hubWriteEnvironment(
+  view: HubMergedProjectView,
+  nodeNameByEnvironmentId: ReadonlyMap<EnvironmentId, string>,
+  primaryEnvironmentId: EnvironmentId | null,
+): EnvironmentId | null {
+  const nodeNames = new Set(view.nodes.map((node) => node.nodeName));
+  return (
+    byPrimaryFirst(nodeNameByEnvironmentId, primaryEnvironmentId).find((id) =>
+      nodeNames.has(nodeNameByEnvironmentId.get(id)!),
+    ) ?? null
+  );
+}
+
+/** The T3 project checked out at this portfolio project's path, for starting a thread in it. */
+export function t3ProjectForHubView<
+  P extends { readonly environmentId: EnvironmentId; readonly workspaceRoot: string },
+>(
+  view: HubMergedProjectView,
+  projects: ReadonlyArray<P>,
+  nodeNameByEnvironmentId: ReadonlyMap<EnvironmentId, string>,
+): P | null {
+  const checkouts = new Set(
+    view.nodes.flatMap((node) =>
+      node.localPath === null ? [] : [linkKey(node.nodeName, node.localPath)],
+    ),
+  );
+  return (
+    projects.find((project) => {
+      const nodeName = nodeNameByEnvironmentId.get(project.environmentId);
+      return nodeName !== undefined && checkouts.has(linkKey(nodeName, project.workspaceRoot));
+    }) ?? null
+  );
+}
+
 /**
  * The environment to write a row's portfolio change through, preferring the
  * primary one. A linked row needs a node whose portfolio already has the
@@ -132,18 +176,17 @@ export function pickerWriteFor(
   nodeNameByEnvironmentId: ReadonlyMap<EnvironmentId, string>,
   primaryEnvironmentId: EnvironmentId | null,
 ): PickerWrite | null {
-  const environmentIds = [...nodeNameByEnvironmentId.keys()].sort(
-    (a, b) => Number(b === primaryEnvironmentId) - Number(a === primaryEnvironmentId),
-  );
   if (row.hub) {
-    const nodeNames = new Set(row.hub.nodes.map((node) => node.nodeName));
-    const environmentId = environmentIds.find((id) =>
-      nodeNames.has(nodeNameByEnvironmentId.get(id)!),
+    const environmentId = hubWriteEnvironment(
+      row.hub,
+      nodeNameByEnvironmentId,
+      primaryEnvironmentId,
     );
-    return environmentId === undefined
+    return environmentId === null
       ? null
       : { environmentId, input: { id: row.hub.project.id, ...patch } };
   }
+  const environmentIds = byPrimaryFirst(nodeNameByEnvironmentId, primaryEnvironmentId);
   for (const environmentId of environmentIds) {
     const member = row.group.memberProjects.find(
       (project) => project.environmentId === environmentId,

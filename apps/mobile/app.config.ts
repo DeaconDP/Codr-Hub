@@ -1,4 +1,4 @@
-import { hostname } from "node:os";
+import * as NodeOS from "node:os";
 
 import type { ExpoConfig } from "expo/config";
 
@@ -22,10 +22,11 @@ const runtimeVersionPolicy =
 // CODR_HUB_METRO_URL (for example a Tailscale address).
 const devMetroUrl =
   repoEnv.CODR_HUB_METRO_URL?.trim() ||
-  `http://${hostname().includes(".") ? hostname() : `${hostname()}.local`}:8081`;
+  `http://${NodeOS.hostname().includes(".") ? NodeOS.hostname() : `${NodeOS.hostname()}.local`}:8081`;
 const devClientPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   "expo-dev-client",
-  { defaultLaunchURL: devMetroUrl, skipOnboarding: true },
+  // Expo's floating Tools button sits over header actions; shake opens the dev menu instead.
+  { defaultLaunchURL: devMetroUrl, skipOnboarding: true, toolsButton: false },
 ];
 
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();

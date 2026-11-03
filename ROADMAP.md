@@ -19,7 +19,7 @@ Portfolio store (git-backed), strategy list, project table, Deez-PM import, paci
 
 ### E3. Fold in Deez-Project-Manager
 
-Kanban tasks per project (PR #4) and site fleet: preview/live URLs, sticky ports, launch commands (PR #5), both implemented, PRs open. Remaining: the machine monitor, Unity Hub/VCC imports, tags and saved views.
+Kanban tasks per project (PR #4) and site fleet: preview/live URLs, sticky ports, launch commands (PR #5), both on `codr-hub/v0.1`. Remaining: the machine monitor, Unity Hub/VCC imports, tags and saved views.
 
 ### E4. Fold in Cursor-Hub
 
@@ -31,9 +31,9 @@ Git self-update with fan-out is done: fleet parents fast-forward each node from 
 
 An always-on usage overlay or compact widget. Extra providers that T3 doesn't probe (OpenRouter, fal.ai, xAI billing).
 
-### E6. Native mobile hub
+### E6. Native mobile hub (in progress)
 
-A hub screen in `apps/mobile`, with push notifications when autopilot work needs review.
+Mobile comes first: the owner tests on the phone. The Hub tab has Ranked, Favourites and Activity; Choose project puts favourites first. Next: the test queue, then the rest of the web Hub (board, strategy), then push notifications when autopilot work needs review.
 
 ### E7. Strategy and research layer
 
@@ -68,16 +68,17 @@ Done when agent work feels alive on chat and Hub, idle surfaces stay still, and 
 
 ## Deferred
 
-- 2026-10-31: Upstream sync kept Codr-Hub names only where the fork had already rebranded a line. Strings upstream added since then (mobile toolbars, outdated-server notice, macOS usage descriptions) still say "T3 Code"; sweep them in one pass rather than per merge. `scripts/build-desktop-artifact.ts:2829`
+- 2026-11-01: The high-visibility "T3 Code" strings are now Codr-Hub: mobile toolbars and settings, the outdated-server notice, macOS usage descriptions and permission prompts, the web title and splash, message author labels, and desktop startup-failure and About dialogs. The long tail of upstream error and settings copy in `apps/web`, `apps/desktop` and `apps/server` still says "T3 Code"; it stays until Codr-Hub has its own wordmark, because each changed line is a future merge conflict. Names of T3 services (T3 Connect, the T3 Code GitHub app, the GNOME extension) and upstream attribution stay as they are. `apps/web/src/components/settings/ConnectionsSettings.tsx:1198`
 - 2026-10-28: Desktop auto-update (E8) waits for signed releases. The updater is already built, but `DeaconDP/Codr-Hub` has no releases, `release.yml` is not on `main`, and the repo is private. electron-updater can't read private releases without a baked-in token, and macOS won't apply an update to an unsigned app. To ship it: an Apple Developer ID cert with notarization, Windows signing, a public releases repo set as `T3CODE_DESKTOP_UPDATE_REPOSITORY`, and then flipping `setAutoDownload`/`setAutoInstallOnAppQuit` to true. Source nodes already self-update through the fleet parent. `apps/desktop/src/updates/DesktopUpdates.ts:932`
 
 - 2026-10-27: Mobile OTA updates and EAS are off until Codr-Hub has its own Expo project; the upstream `pingdotgg` owner and project ID were removed. To restore, create the project and set `owner`, `extra.eas.projectId` and `updates.url`. `apps/mobile/app.config.ts:243`
-- 2026-10-27: The native mobile "Choose project" screen and the command palette's project list don't show favourites, tags, manual order, or machine colours yet. The web picker model is ready to move into `client-runtime` when they do. `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx`
+- 2026-11-02: The native mobile Hub edits priority, status, stage, strategy link, favourites and archiving. It also shows pace per machine, switches the autopilot, runs it once and deploys banked resets. Autonomy, adding projects, ordering strategy priorities, the test queue and boards still need the web Hub. Autonomy waits on purpose: at 100% it merges, so it should not be one mis-tap in a menu. `apps/mobile/src/features/hub/HubRouteScreen.tsx`
+- 2026-11-02: `vp run mobile:install ios` still builds `T3CodeDev.xcworkspace`, which the fork renamed to `CodrHubDev`, so it fails. `scripts/mobile-native-client.ts:718`
+- 2026-10-27: Mobile "Choose project" orders by favourites and manual order with a star, but tags, tag filter, reordering and machine colours are web only, and the command palette's project list doesn't use the order. `apps/mobile/src/features/threads/NewTaskRouteScreen.tsx`
 - 2026-10-27: The picker still starts a thread on the group's preferred checkout; picking a specific machine from its colour icon is not wired. `apps/web/src/components/hub/HubProjectPicker.tsx`
 - 2026-10-27: Machine monitor deferred behind site fleet; Ada metrics overlap E5 Fuel Gauge and are host-scoped, not portfolio cards. `ROADMAP.md` E3
 - 2026-10-05: Claude banked resets aren't read on macOS because T3 skips the Keychain. Fuel Gauge reads it via `/usr/bin/security`; porting that touches credential handling and needs a security review. `apps/server/src/provider/Layers/claudeResetCredits.ts:153`
 - 2026-10-05: Automatic takeover of an offline pacing owner deferred; a timeout could let its paused threads resume alongside a new owner. Recover the owning node and drain it before handover. `apps/server/src/codrHub/quotaOwnership.ts:158`
-- 2026-10-05: Native mobile hub screen deferred; the responsive web hub over Tailscale covers mobile for v0.1. `apps/mobile/src/features/`
 - 2026-10-05: No disk "scan for checkouts" yet. **Import from T3** and **Sync with T3** fix a missing Deez-PM path when T3 has that project open; for any other project, fix the path by hand. `apps/server/src/codrHub/t3Import.ts`
 - 2026-10-05: The Hub has no command palette entry or keybinding yet. Each would be another upstream seam, so they wait until the page settles. `apps/web/src/components/CommandPalette.tsx`
 - 2026-10-05: No orchestrator MCP tools for the hub yet (agents can't read or rank the portfolio). `apps/server/src/mcp/`

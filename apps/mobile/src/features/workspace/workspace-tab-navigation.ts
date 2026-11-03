@@ -1,3 +1,4 @@
+import { isPageTab } from "./navigation-tab-order";
 import type { WorkspaceSelections } from "../../persistence/mobile-preferences";
 import {
   SETTINGS_PAGE_TARGETS,
@@ -220,7 +221,7 @@ export function workspaceTabNavigationState<
   }
   const home = state.routes.find((route) => route.name === "Home") ?? { name: "Home" };
   const detail =
-    options.columns && tab !== "usage"
+    options.columns && !isPageTab(tab)
       ? detailRoute(state, tab, selections, options.check)
       : undefined;
   const routes = [...[home, ...(detail ? [detail] : [])].map(keyed), ...overlays];

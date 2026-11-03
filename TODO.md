@@ -92,7 +92,7 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Upsert + Deez import map for the new fields; merge this-node sticky/launch
 - [x] Hub dialog + table glance links (Preview / Live; muted port/cmd; no Run/OpenShip)
 - [x] Docs + focused tests (stacked on kanban, branch `codr-hub/e3-site-fleet`)
-- [ ] Land https://github.com/DeaconDP/Codr-Hub/pull/5 into codr-hub/v0.1
+- [x] Land https://github.com/DeaconDP/Codr-Hub/pull/5 into codr-hub/v0.1 (squashed)
 
 ## Job kind, model policy, pace targets (uncommitted)
 
@@ -170,3 +170,15 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Hub settings: **Update from T3 Code** row (Check, Merge & push, blocker reason, conflict list)
 - [x] Temp-repo tests: behind count, merge + push, conflict aborted, dirty refused, unavailable (5)
 - [ ] Owner: Check and Merge & push from the desktop startup link; watch a fleet node fast-forward
+
+## E6: Native mobile Hub (uncommitted)
+
+- [x] Move `hubFormat` and `projectPickerModel` to `client-runtime/codrHub`; add `hubActivity` with tests
+- [x] Hub tab (second, after Threads) on iOS and Android, plus a command palette entry
+- [x] Ranked and Favourites lists: portfolio rank, star toggle, tap to start a task, show finished
+- [x] Activity: commit window, totals, commits per project, counting a project on two machines once
+- [x] Choose project: favourites first, then manual order, with a star
+- [x] Edit menu on each row: priority, status, stage, strategy, archive and unarchive; rank updates at once
+- [x] Pace view per machine: pace bars, autopilot switch, Run once and Deploy reset, with confirmations for anything that starts agents or spends a reset
+- [ ] Owner: try the Hub tab on the iPhone against a Codr-Hub server
+- [ ] Android pass: no emulator is installed on Steve

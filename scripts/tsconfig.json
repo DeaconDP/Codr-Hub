@@ -5,5 +5,13 @@
     "types": ["node"],
     "lib": ["ESNext", "esnext.disposable"]
   },
-  "include": ["**/*.ts"]
+  "include": [
+    "**/*.ts",
+    "../apps/server/src/attachmentPaths.ts",
+    "../apps/server/src/attachmentStore.ts",
+    "../apps/server/src/codrHub/fleetDecide.ts",
+    "../apps/server/src/codrHub/fleetLogin.ts",
+    "../apps/server/src/config.ts",
+    "../apps/server/src/imageMime.ts"
+  ]
 }

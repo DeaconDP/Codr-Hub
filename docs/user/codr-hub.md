@@ -25,6 +25,8 @@ Under a project's **Details**, set **Job kind** to Dev, Edit, Writing, or Image.
 
 **Lane** groups projects into Immersion, Automation, or Publicity for filtering. Strategy and priority still determine their rank.
 
+**Preview site** and **Live site** (plus an optional site id and surface) are also under **Details**. They are shared by every machine and show as links under the project's row. **Sticky port** and **Launch command** apply only to this machine. Import from Deez-PM fills empty fields and never overwrites what you edited in the Hub.
+
 ## Importing from T3
 
 **Import from T3** brings in the projects that the selected machine has open in T3. A project that's already in the Hub, matched by its git remote or its name, gets this machine's checkout instead of being added twice. This also fixes a **Path missing** checkout when the project has moved. Your edits to Hub projects are never overwritten.
@@ -102,6 +104,8 @@ The project list merges live data from every connected T3 environment. Pace, Aut
 To use the Hub from a phone browser, join the phone to the same tailnet and connect it as described in [Remote access](remote-access.md#tailscale-https).
 
 To install the iPhone app instead, plug in and unlock the iPhone, then run `npm run codr:phone` in your Codr-Hub folder on a Mac with Xcode.
+
+The app has a **Hub** tab, as long as it is connected to a machine running Codr-Hub. **Ranked** lists open projects in portfolio order, and **Favourites** shows the ones you star. Tap a project to start a task in it. **Activity** shows commits per project for the window you pick, and a project on several machines counts once. Tap the **⋯** on a project to change its priority, status, stage, or strategy, or to archive it; **Show finished** brings archived projects back so you can undo that. Choosing a project for a new task lists your favourites first. **Pace** shows each connected machine's subscriptions against their targets. There you can switch that machine's autopilot, run it once, or deploy a banked reset; each of those asks first, except switching the autopilot off. To change autonomy, add projects, or reorder strategy priorities, use the Hub in a browser.
 
 ## Always-on machines
 

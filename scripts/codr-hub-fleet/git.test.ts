@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - The test builds throwaway Git repos with real git and temp dirs.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
