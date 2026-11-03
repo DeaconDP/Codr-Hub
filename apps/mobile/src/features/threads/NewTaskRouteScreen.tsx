@@ -2,6 +2,7 @@ import { isDraftThreadRoute } from "./thread-route-state";
 import * as Dialog from "../../components/ui/Dialog";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { NavigationRow } from "../../components/ui/NavigationRow";
+import { Menu } from "../../components/ui/Menu";
 import { AppBar } from "../../components/ui/AppBar";
 import {
   StackActions,
@@ -10,6 +11,12 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/ui/AppSymbol";
+import {
+  labelOf,
+  SORT_OPTIONS,
+  type HubProjectSort,
+} from "@t3tools/client-runtime/codrHub/hubFormat";
+import { pickerWriteFor } from "@t3tools/client-runtime/codrHub/projectPickerModel";
 import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
@@ -28,6 +35,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { useProjects, useServerConfigs } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
+import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import type { WorkspaceState } from "../../state/workspaceModel";
@@ -183,7 +191,44 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         isScratchProject(project, serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot),
       ),
   );
-  const { scopes: orderedScopes, favoriteKeys } = useHubOrderedScopes(listScopes);
+  const [sort, setSort] = useState<HubProjectSort>("favorites");
+  const hubOrder = useHubOrderedScopes(listScopes, sort);
+  const orderedScopes = hubOrder.scopes;
+  // Saving commits to the portfolio repo, so show a star change before the snapshot catches up.
+  const [pendingFavorites, setPendingFavorites] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const isFavorite = (key: string) => pendingFavorites.get(key) ?? hubOrder.favoriteKeys.has(key);
+  const upsertHubProject = useAtomCommand(serverEnvironment.hubUpsertProject, {
+    reportFailure: false,
+  });
+  const toggleFavorite = async (key: string, title: string) => {
+    const row = hubOrder.rowByKey.get(key);
+    const favorite = !isFavorite(key);
+    const write = row
+      ? pickerWriteFor(row, { favorite }, hubOrder.nodeNameByEnvironmentId, null)
+      : null;
+    if (write === null) {
+      Dialog.alert(`Could not update ${title}`, "No connected machine running Codr-Hub has it.");
+      return;
+    }
+    setPendingFavorites((current) => new Map(current).set(key, favorite));
+    const result = await upsertHubProject(write);
+    setPendingFavorites((current) => {
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const failure = squashAtomCommandFailure(result);
+      Dialog.alert(
+        `Could not update ${title}`,
+        failure instanceof Error ? failure.message : "The request failed.",
+      );
+    }
+  };
+  const sortOptions = hubOrder.hubAvailable
+    ? SORT_OPTIONS.filter((option) => option.value !== "rank")
+    : SORT_OPTIONS.filter((option) => option.value === "recent" || option.value === "name");
+  const shownSort = sortOptions.some((option) => option.value === sort) ? sort : "name";
   const visibleScopes = filterProjectScopes(orderedScopes, searchText);
   const resumedDestinationKeyRef = useRef<string | null>(null);
   const reservedDestinationProject = incomingShare?.destination
@@ -460,117 +505,178 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               </Text>
             </View>
           ) : (
-            <View
-              collapsable={false}
-              className={
-                Platform.OS === "android"
-                  ? "overflow-hidden rounded-[28px] bg-grouped-card"
-                  : "overflow-hidden rounded-[24px] bg-grouped-card"
-              }
-            >
-              {visibleScopes.map((scope, scopeIndex) => {
-                const hasMultipleProjects = scope.projects.length > 1;
-                const selectionTarget = getProjectScopeSelectionTarget(
-                  scope,
-                  selectedEnvironmentId,
-                  connectedEnvironmentIds,
-                );
-                if (Platform.OS === "android") {
-                  return (
-                    <NavigationRow
-                      className="bg-grouped-card"
-                      key={scope.key}
-                      title={scope.title}
-                      subtitle={
-                        hasMultipleProjects
-                          ? `${scope.projects.length} workspaces`
-                          : selectionTarget.workspaceRoot
-                      }
-                      subtitleNumberOfLines={1}
-                      subtitleEllipsizeMode="middle"
-                      disabled={reservedDestinationProject !== null}
-                      onPress={() => void selectProject(selectionTarget)}
-                      trailing={
-                        favoriteKeys.has(scope.key) ? (
-                          <SymbolView
-                            name="star.fill"
-                            size={16}
-                            tintColorClassName="accent-icon-muted"
-                            type="monochrome"
-                          />
-                        ) : undefined
-                      }
-                      leading={
-                        <ProjectFavicon
-                          environmentId={scope.representative.environmentId}
-                          faviconPath={scope.representative.faviconPath}
-                          projectIcon={scope.representative.projectIcon}
-                          size={24}
-                          projectTitle={scope.title}
-                          workspaceRoot={scope.representative.workspaceRoot}
-                        />
-                      }
-                    />
-                  );
-                }
-                return (
-                  <View
-                    key={scope.key}
-                    className={cn(scopeIndex > 0 && "border-t border-border-subtle")}
+            <View className="gap-1">
+              {listScopes.length > 1 ? (
+                <View className="flex-row justify-end">
+                  <Menu
+                    title="Sort by"
+                    actions={sortOptions.map((option) => ({
+                      id: option.value,
+                      title: option.label,
+                      state: option.value === shownSort ? "on" : "off",
+                    }))}
+                    onPressAction={({ nativeEvent }) => {
+                      const next = sortOptions.find((option) => option.value === nativeEvent.event);
+                      if (next) setSort(next.value);
+                    }}
                   >
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel={scope.title}
-                      disabled={reservedDestinationProject !== null}
-                      onPress={() => void selectProject(selectionTarget)}
-                      className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5"
+                      accessibilityLabel={`Sort by ${labelOf(SORT_OPTIONS, shownSort)}`}
+                      className="min-h-11 flex-row items-center gap-1.5 px-1"
                     >
-                      <View className="h-7 w-7 items-center justify-center">
-                        <ProjectFavicon
-                          environmentId={scope.representative.environmentId}
-                          faviconPath={scope.representative.faviconPath}
-                          projectIcon={scope.representative.projectIcon}
-                          size={20}
-                          projectTitle={scope.title}
-                          workspaceRoot={scope.representative.workspaceRoot}
-                        />
-                      </View>
-                      <View className="min-w-0 flex-1">
-                        <Text className={cn("text-base leading-snug", "font-t3-bold")}>
-                          {scope.title}
-                        </Text>
-                        <Text
-                          className="text-xs leading-snug text-foreground-muted"
-                          ellipsizeMode="middle"
-                          numberOfLines={1}
-                        >
-                          {hasMultipleProjects
-                            ? `${scope.projects.length} workspaces`
-                            : selectionTarget.workspaceRoot}
-                        </Text>
-                      </View>
-                      {favoriteKeys.has(scope.key) ? (
-                        <SymbolView
-                          name="star.fill"
-                          size={14}
-                          tintColorClassName="accent-icon-muted"
-                          type="monochrome"
-                        />
-                      ) : null}
+                      <Text className="text-sm text-foreground-muted">
+                        Sort: {labelOf(SORT_OPTIONS, shownSort)}
+                      </Text>
                       <SymbolView
-                        name="chevron.right"
-                        size={14}
-                        tintColorClassName="accent-chevron"
+                        name="chevron.down"
+                        size={12}
+                        tintColorClassName="accent-icon-subtle"
                         type="monochrome"
                       />
                     </Pressable>
-                  </View>
-                );
-              })}
+                  </Menu>
+                </View>
+              ) : null}
+              <View
+                collapsable={false}
+                className={
+                  Platform.OS === "android"
+                    ? "overflow-hidden rounded-[28px] bg-grouped-card"
+                    : "overflow-hidden rounded-[24px] bg-grouped-card"
+                }
+              >
+                {visibleScopes.map((scope, scopeIndex) => {
+                  const hasMultipleProjects = scope.projects.length > 1;
+                  const selectionTarget = getProjectScopeSelectionTarget(
+                    scope,
+                    selectedEnvironmentId,
+                    connectedEnvironmentIds,
+                  );
+                  if (Platform.OS === "android") {
+                    return (
+                      <NavigationRow
+                        className="bg-grouped-card"
+                        key={scope.key}
+                        title={scope.title}
+                        subtitle={
+                          hasMultipleProjects
+                            ? `${scope.projects.length} workspaces`
+                            : selectionTarget.workspaceRoot
+                        }
+                        subtitleNumberOfLines={1}
+                        subtitleEllipsizeMode="middle"
+                        disabled={reservedDestinationProject !== null}
+                        onPress={() => void selectProject(selectionTarget)}
+                        trailing={
+                          hubOrder.hubAvailable ? (
+                            <FavoriteStar
+                              title={scope.title}
+                              favorite={isFavorite(scope.key)}
+                              onPress={() => void toggleFavorite(scope.key, scope.title)}
+                            />
+                          ) : undefined
+                        }
+                        leading={
+                          <ProjectFavicon
+                            environmentId={scope.representative.environmentId}
+                            faviconPath={scope.representative.faviconPath}
+                            projectIcon={scope.representative.projectIcon}
+                            size={24}
+                            projectTitle={scope.title}
+                            workspaceRoot={scope.representative.workspaceRoot}
+                          />
+                        }
+                      />
+                    );
+                  }
+                  return (
+                    <View
+                      key={scope.key}
+                      className={cn(
+                        "flex-row items-center bg-grouped-card",
+                        scopeIndex > 0 && "border-t border-border-subtle",
+                      )}
+                    >
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={scope.title}
+                        disabled={reservedDestinationProject !== null}
+                        onPress={() => void selectProject(selectionTarget)}
+                        className="min-w-0 flex-1 flex-row items-center gap-3 py-3.5 ps-4"
+                      >
+                        <View className="h-7 w-7 items-center justify-center">
+                          <ProjectFavicon
+                            environmentId={scope.representative.environmentId}
+                            faviconPath={scope.representative.faviconPath}
+                            projectIcon={scope.representative.projectIcon}
+                            size={20}
+                            projectTitle={scope.title}
+                            workspaceRoot={scope.representative.workspaceRoot}
+                          />
+                        </View>
+                        <View className="min-w-0 flex-1">
+                          <Text className={cn("text-base leading-snug", "font-t3-bold")}>
+                            {scope.title}
+                          </Text>
+                          <Text
+                            className="text-xs leading-snug text-foreground-muted"
+                            ellipsizeMode="middle"
+                            numberOfLines={1}
+                          >
+                            {hasMultipleProjects
+                              ? `${scope.projects.length} workspaces`
+                              : selectionTarget.workspaceRoot}
+                          </Text>
+                        </View>
+                      </Pressable>
+                      {hubOrder.hubAvailable ? (
+                        <FavoriteStar
+                          title={scope.title}
+                          favorite={isFavorite(scope.key)}
+                          onPress={() => void toggleFavorite(scope.key, scope.title)}
+                        />
+                      ) : (
+                        <View className="pe-4">
+                          <SymbolView
+                            name="chevron.right"
+                            size={14}
+                            tintColorClassName="accent-chevron"
+                            type="monochrome"
+                          />
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
             </View>
           )}
         </ScrollView>
       </ScreenContent>
     </View>
+  );
+}
+
+function FavoriteStar(props: { title: string; favorite: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={
+        props.favorite
+          ? `Remove ${props.title} from favourites`
+          : `Add ${props.title} to favourites`
+      }
+      accessibilityState={{ selected: props.favorite }}
+      onPress={props.onPress}
+      className="size-12 items-center justify-center"
+    >
+      <SymbolView
+        name={props.favorite ? "star.fill" : "star"}
+        size={18}
+        tintColorClassName={props.favorite ? "accent-foreground" : "accent-icon-subtle"}
+        type="monochrome"
+      />
+    </Pressable>
   );
 }

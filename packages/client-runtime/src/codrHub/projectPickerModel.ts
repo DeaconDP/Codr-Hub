@@ -1,11 +1,14 @@
 import type {
   EnvironmentId,
   HubMergedProjectView,
+  HubStrategyPriority,
   HubUpsertProjectInput,
   ProjectIconColor,
 } from "@t3tools/contracts";
 
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
+
+import { compareHubProjectViews, type HubProjectSort } from "./hubFormat.ts";
 
 /**
  * Codr-Hub new-thread project picker. Favourites, tags and manual order live
@@ -81,6 +84,41 @@ export function pickerSections<G extends PickerGroup>(
     favorites: sorted.filter((row) => row.hub?.project.favorite === true),
     others: sorted.filter((row) => row.hub?.project.favorite !== true),
   };
+}
+
+/**
+ * Picker order for a chosen sort. "favorites" is the default picker order. Hub sorts put
+ * projects that are not in the Hub last, by name; "recent" uses each group's latest activity.
+ */
+export function sortPickerRows<G extends PickerGroup>(
+  rows: ReadonlyArray<PickerRow<G>>,
+  sort: HubProjectSort,
+  options: {
+    readonly strategy: ReadonlyArray<HubStrategyPriority>;
+    readonly activeAt: (group: G) => string | null;
+  },
+): PickerRow<G>[] {
+  if (sort === "favorites") {
+    const { favorites, others } = pickerSections(rows);
+    return [...favorites, ...others];
+  }
+  const byName = (a: PickerRow<G>, b: PickerRow<G>) =>
+    a.group.displayName.localeCompare(b.group.displayName);
+  if (sort === "name") return [...rows].sort(byName);
+  if (sort === "recent") {
+    return [...rows].sort(
+      (a, b) =>
+        (options.activeAt(b.group) ?? "").localeCompare(options.activeAt(a.group) ?? "") ||
+        byName(a, b),
+    );
+  }
+  const compareHub = compareHubProjectViews(sort, options.strategy);
+  return [...rows].sort((a, b) => {
+    if (a.hub && b.hub) return compareHub(a.hub, b.hub);
+    if (a.hub) return -1;
+    if (b.hub) return 1;
+    return byName(a, b);
+  });
 }
 
 export function rowTags(row: PickerRow): ReadonlyArray<string> {

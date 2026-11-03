@@ -10,6 +10,7 @@ import {
   pickerWriteFor,
   planPickerReorder,
   rowMatches,
+  sortPickerRows,
   t3ProjectForHubView,
 } from "./projectPickerModel.ts";
 
@@ -124,6 +125,37 @@ describe("pickerSections", () => {
     const { favorites, others } = pickerSections(rows);
     expect(favorites.map((row) => row.group.displayName)).toEqual(["Star"]);
     expect(others.map((row) => row.group.displayName)).toEqual(["Beta", "Alpha", "Apex", "Zed"]);
+  });
+});
+
+describe("sortPickerRows", () => {
+  const rows = linkPickerRows(
+    [group("Zed", [[steve, "/z"]]), group("Low", [[steve, "/l"]]), group("Crit", [[steve, "/c"]])],
+    [
+      hub("low", { priority: "low", favorite: true }, [["Steve", "/l"]]),
+      hub("crit", { priority: "critical", status: "paused" }, [["Steve", "/c"]]),
+    ],
+    nodes,
+  );
+  const activeAt = { Zed: "2026-10-03", Low: "2026-10-01", Crit: null } as Record<
+    string,
+    string | null
+  >;
+  const names = (sort: Parameters<typeof sortPickerRows>[1]) =>
+    sortPickerRows(rows, sort, {
+      strategy: [],
+      activeAt: (g) => activeAt[g.displayName] ?? null,
+    }).map((row) => row.group.displayName);
+
+  it("keeps favourites first by default and puts projects outside the Hub last for Hub sorts", () => {
+    expect(names("favorites")).toEqual(["Low", "Crit", "Zed"]);
+    expect(names("priority")).toEqual(["Crit", "Low", "Zed"]);
+    expect(names("status")).toEqual(["Low", "Crit", "Zed"]);
+  });
+
+  it("sorts by latest activity or name across every row", () => {
+    expect(names("recent")).toEqual(["Zed", "Low", "Crit"]);
+    expect(names("name")).toEqual(["Crit", "Low", "Zed"]);
   });
 });
 

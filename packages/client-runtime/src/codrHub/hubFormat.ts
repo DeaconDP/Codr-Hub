@@ -201,10 +201,22 @@ export function filterAndSortProjects(
       ...view.project.tags,
       ...view.nodes.flatMap((node) => [node.nodeName, node.localPath ?? ""]),
     ].some((text) => text.toLowerCase().includes(query));
-  const rank = compareHubProjects(options.strategy);
+  // A fresh array from filter; Hermes has no toSorted.
+  return views
+    .filter(
+      (view) => matchesFilter(view) && matchesQuery(view) && projectMatchesLane(view.project, lane),
+    )
+    .sort(compareHubProjectViews(options.sort, options.strategy));
+}
+
+export function compareHubProjectViews(
+  sort: HubProjectSort,
+  strategy: ReadonlyArray<HubStrategyPriority>,
+) {
+  const rank = compareHubProjects(strategy);
   // Ties fall back to rank, so each grouping sort still reads in portfolio order.
   const primary = (a: HubMergedProjectView, b: HubMergedProjectView) => {
-    switch (options.sort) {
+    switch (sort) {
       case "name":
         return a.project.name.localeCompare(b.project.name);
       case "recent": {
@@ -228,14 +240,8 @@ export function filterAndSortProjects(
         return 0;
     }
   };
-  const compare = (a: HubMergedProjectView, b: HubMergedProjectView) =>
+  return (a: HubMergedProjectView, b: HubMergedProjectView) =>
     primary(a, b) || rank(a.project, b.project);
-  // A fresh array from filter; Hermes has no toSorted.
-  return views
-    .filter(
-      (view) => matchesFilter(view) && matchesQuery(view) && projectMatchesLane(view.project, lane),
-    )
-    .sort(compare);
 }
 
 /** A short, file-safe id with a random suffix so two nodes adding the same title never collide. */
