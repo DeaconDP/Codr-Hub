@@ -8,6 +8,7 @@ Motion is for live agent work. Idle UI stays still. Read this before adding any 
 - **One loop per active job.** In the Hub, the project row's "running" badge is the job's indicator. Do not also animate the host lines, the pace panel, or other cells for the same job.
 - **One-shot stage cues** on live rows: enter, complete, and fail. Each is a single short animation (under 300 ms) that plays only when the state changes during the row's lifetime. A remounted row that is already done does not replay its cue.
 - **Enter and exit transitions** on dialogs, menus, and toasts that already have them.
+- **The boot screen** in `apps/web/index.html`: the logo wave and progress sweep loop only until the app mounts. Its keyframes are its own because the app's CSS has not loaded yet, and it honors reduced motion in CSS.
 
 ## Not allowed
 
