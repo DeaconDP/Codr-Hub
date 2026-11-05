@@ -13,10 +13,21 @@ import {
   type HubBoardCommand,
   type HubPriority,
   type HubTask,
+  type HubTaskCounts,
   type HubTaskRank,
 } from "@t3tools/contracts";
 
 export { projectBoard };
+
+export function countTasksByProject(tasks: Iterable<HubTask>): Record<string, HubTaskCounts> {
+  const counts: Record<string, { total: number; done: number }> = {};
+  for (const task of tasks) {
+    const entry = (counts[task.projectId] ??= { total: 0, done: 0 });
+    entry.total += 1;
+    if (task.column === "done") entry.done += 1;
+  }
+  return counts;
+}
 
 export type HubBoardTouched =
   | { readonly op: "write"; readonly task: HubTask }

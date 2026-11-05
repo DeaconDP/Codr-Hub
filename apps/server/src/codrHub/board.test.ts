@@ -2,6 +2,7 @@ import type { HubTask, HubTaskRank } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  countTasksByProject,
   hubTaskFromDeez,
   mapDeezColumn,
   mintRank,
@@ -73,6 +74,19 @@ describe("projectBoard", () => {
     expect(projected.done.map((entry) => entry.id)).toEqual(["c"]);
     expect(projected.in_progress).toEqual([]);
     expect(projected.ready_for_testing).toEqual([]);
+  });
+});
+
+describe("countTasksByProject", () => {
+  it("counts every column as total and only done as done, per project", () => {
+    expect(
+      countTasksByProject([
+        task({ id: "a", rank: rank("m"), column: "todo" }),
+        task({ id: "b", rank: rank("n"), column: "ready_for_testing" }),
+        task({ id: "c", rank: rank("o"), column: "done" }),
+        task({ id: "d", rank: rank("m"), column: "done", projectId: "other" }),
+      ]),
+    ).toEqual({ emily: { total: 3, done: 1 }, other: { total: 1, done: 1 } });
   });
 });
 

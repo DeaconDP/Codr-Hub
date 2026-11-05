@@ -35,6 +35,8 @@ T3 Code already provides multi-provider agents on subscription (OAuth CLI) login
 | Strategy        | A specific, ordered priority list. Broad themes such as STEP are too high level to show in the app.                                                                                              |
 | Hosts           | Every Tailscale mesh node, reachable from mobile. Steve (this MacBook Pro) is the first node.                                                                                                    |
 | Docs            | In-repo docs for agents come first: `docs/codr-hub/`, `ROADMAP.md`, and `TODO.md`.                                                                                                               |
+| Role (11-05)    | Codr-Hub is the project-management layer over T3 for the whole SDLC: scope, plan, organise, test, ship, maintain. Design and development happen in T3 threads. See ROADMAP E10.                  |
+| Unit (11-05)    | The project moves through the lifecycle (one stage per project), not individual tasks. A project's plan is its Hub board, synced both ways with the repo's `ROADMAP.md` / `TODO.md`.             |
 
 ## v0.1 done means
 

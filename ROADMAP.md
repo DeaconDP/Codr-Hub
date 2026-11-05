@@ -66,7 +66,20 @@ Steps 1–3 shipped: [docs/codr-hub/MOTION.md](docs/codr-hub/MOTION.md), the Hub
 
 Done when agent work feels alive on chat and Hub, idle surfaces stay still, and reduced-motion / offscreen pauses are verified by hand on a high-refresh display.
 
+### E10. SDLC management layer
+
+Codr-Hub manages the lifecycle around the work T3 does: scope, plan, organise, test, ship and maintain. Design and development stay in T3 threads. The project is the unit that moves through stages. Its plan is the Hub board, synced both ways with the repo's `ROADMAP.md` / `TODO.md`. Owner's order: organisation, prioritisation and management first, then the rest.
+
+1. **Organise and prioritise** (in progress). Builds on ranking, strategy, favourites, tags, lanes and the dashboard. First slice: **Stages**, on iOS (the owner's main client) and on web. Projects are grouped by SDLC stage, and their board tasks act as subtasks.
+2. **Plan sync.** Board ↔ repo `TODO.md` / `ROADMAP.md`, both ways. Needs a stated markdown format contract, such as checkbox lines under headings, so free-form text isn't rewritten. Agents need Hub MCP tools (see Deferred) to read and write the plan.
+3. **Scope.** A short scope record per project (problem, outcome, non-goals, done means) that the Plan stage drafts and the owner approves.
+4. **Test.** The test queue shows what to try and the preview link; this extends the owner test gate.
+5. **Ship.** Ship can merge the PR, tag and changelog, and deploy, gated by autonomy. Today it only clears the gate.
+6. **Maintain.** Inbound signals (failing CI, GitHub issues, dependency alerts) become board tasks; a scheduled health check per project.
+
 ## Deferred
+
+- 2026-11-05: The Stages board has no vertical drag. Rank comes from strategy, then priority, then favourites; manual order only breaks ties, so a dropped card would snap back. Reorder by changing a project's strategy or priority. `packages/client-runtime/src/codrHub/stageBoardModel.ts`
 
 - 2026-11-02: The new boot screen covers web and desktop only. The desktop "Connecting to WSL" splash keeps its spinner, and the mobile native splash stays a static image because native splash screens cannot animate. Its progress bar is indeterminate, because the browser exposes no total for module loading and a made-up percentage would lie. `apps/desktop/src/window/DesktopWindow.ts:177`
 - 2026-11-01: The high-visibility "T3 Code" strings are now Codr-Hub: mobile toolbars and settings, the outdated-server notice, macOS usage descriptions and permission prompts, the web title and splash, message author labels, and desktop startup-failure and About dialogs. The long tail of upstream error and settings copy in `apps/web`, `apps/desktop` and `apps/server` still says "T3 Code"; it stays until Codr-Hub has its own wordmark, because each changed line is a future merge conflict. Names of T3 services (T3 Connect, the T3 Code GitHub app, the GNOME extension) and upstream attribution stay as they are. `apps/web/src/components/settings/ConnectionsSettings.tsx:1198`

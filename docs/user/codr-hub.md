@@ -43,6 +43,12 @@ Each row has a star for favourites and a **⋯** menu to **Rename** the project 
 
 Favourites, tags, and order are saved in the portfolio, so every device and machine sees the same list. Starring, tagging, or moving a project that isn't in the Hub yet adds it with autonomy **Off**, so the autopilot leaves it alone. Renaming changes the project's name everywhere it is checked out. These actions need a connected machine running Codr-Hub that has the project checked out.
 
+## Stages board
+
+Switch the projects list from **List** to **Stages** to see your projects as cards in their lifecycle stage: three columns, or six in six-stage mode. Each column keeps rank order. Drag a card to another column to change its stage, or use its **⋯** menu. Tap the name to edit the project.
+
+**Tasks** on a card shows how many of its board tasks are done. Open it to tick tasks off, untick them, or add one. **Board** opens the full board for that project. Search and **Finished** apply to both views, and **Sort** applies to the list only. Each browser remembers which view you last used.
+
 ## Project board
 
 Open **Board** on a project row (or `/hub/projects/<id>/board`) for that project's Todo / In progress / Ready for testing / Done cards. Import from Deez-PM also brings cards across, mapping its five columns onto these four. Ready-for-testing cards are planning notes; they are separate from **Needs you** test handoffs. Narrow screens show one column at a time.
@@ -107,7 +113,7 @@ To install the iPhone app instead, plug in and unlock the iPhone, then run `npm 
 
 In the app, tap **Add environment**, enter one machine's Tailscale address (such as `pc.tail1234.ts.net`, or with `:5733` for a dev server), and leave the code empty. Your other Codr-Hub machines on that Tailscale account then appear on their own. The phone must be on the tailnet, and the machine must serve Codr-Hub with Tailscale Serve.
 
-The app has a **Hub** tab, as long as it is connected to a machine running Codr-Hub. **Ranked** lists open projects in portfolio order, and **Favourites** shows the ones you star. **Sort** above the list reorders either one by recent activity, favourites, priority, status, or name. Tap a project to start a task in it. **Activity** shows commits per project for the window you pick, and a project on several machines counts once. Tap the **⋯** on a project to change its priority, status, stage, or strategy, or to archive it; **Show finished** brings archived projects back so you can undo that. Choosing a project for a new task lists your favourites first; tap a star there to favourite a project, or use **Sort** to order by recent activity, priority, status, or name. **Pace** shows each connected machine's subscriptions against their targets. There you can switch that machine's autopilot, run it once, or deploy a banked reset; each of those asks first, except switching the autopilot off. To change autonomy, add projects, or reorder strategy priorities, use the Hub in a browser.
+The app has a **Hub** tab, as long as it is connected to a machine running Codr-Hub. **Ranked** lists open projects in portfolio order, and **Favourites** shows the ones you star. **Stages** groups open projects by lifecycle stage, in rank order. Tap one to see its board tasks: tick a task off, untick it, add one, or start a **New thread** in that project. Move a project to another stage from its **⋯** menu. **Sort** above the list reorders either one by recent activity, favourites, priority, status, or name. Tap a project to start a task in it. **Activity** shows commits per project for the window you pick, and a project on several machines counts once. Tap the **⋯** on a project to change its priority, status, stage, or strategy, or to archive it; **Show finished** brings archived projects back so you can undo that. Choosing a project for a new task lists your favourites first; tap a star there to favourite a project, or use **Sort** to order by recent activity, priority, status, or name. **Pace** shows each connected machine's subscriptions against their targets. There you can switch that machine's autopilot, run it once, or deploy a banked reset; each of those asks first, except switching the autopilot off. To change autonomy, add projects, or reorder strategy priorities, use the Hub in a browser.
 
 ## Always-on machines
 

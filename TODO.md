@@ -174,6 +174,17 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Temp-repo tests: behind count, merge + push, conflict aborted, dirty refused, unavailable (5)
 - [ ] Owner: Check and Merge & push from the desktop startup link; watch a fleet node fast-forward
 
+## E10: Stages board (uncommitted)
+
+- [x] Contracts: `HubSnapshot.taskCounts` (total / done per project); server fills it from in-memory tasks (`countTasksByProject`, 1 test)
+- [x] `client-runtime/codrHub/stageBoardModel.ts`: stage columns for three/six mode, grouping in rank order, drop → stage (2 tests)
+- [x] Web: **List / Stages** toggle in Hub projects; drag or **⋯** to change stage; card task checklist subscribes only while open; add / tick / untick tasks
+- [x] Mobile: **Stages** segment in the Hub tab: sections per stage in rank order, tap a row for its task checklist (tick, untick, add, New thread), stage from the **⋯** menu. Shared `stageCardGlance` / `stageCardTasks` / `taskToggleCommand` (1 more test)
+- [x] Server Hub tests (130), contracts / client-runtime / web / mobile typecheck, format, lint, knip
+- [ ] Owner: on the iPhone, Hub → Stages: check five segments fit, expand a project, tick / add a task, move a stage
+- [ ] Browser pass with owner go-ahead: Stages at desktop and ~390px, drag between columns, tick and add tasks, three and six-stage mode
+- [ ] Owner: does the Stages board work as the main organising view?
+
 ## E6: Native mobile Hub (uncommitted)
 
 - [x] Move `hubFormat` and `projectPickerModel` to `client-runtime/codrHub`; add `hubActivity` with tests

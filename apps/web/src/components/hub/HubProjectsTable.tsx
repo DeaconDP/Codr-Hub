@@ -5,17 +5,22 @@ import {
   type HubSnapshot,
 } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { StarIcon } from "lucide-react";
 import { useState } from "react";
 
-import { observeVisibleAnimation } from "../../lib/visibleAnimation";
+import { useLocalStorage } from "../../hooks/useLocalStorage";
+
 import { serverEnvironment } from "../../state/server";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { HubProjectDialog } from "./HubProjectDialog";
+import { HubRunningBadge } from "./HubRunningBadge";
+import { HubStageBoard } from "./HubStageBoard";
 import {
   filterAndSortProjects,
   labelOf,
@@ -25,6 +30,8 @@ import {
   type HubProjectSort,
 } from "@t3tools/client-runtime/codrHub/hubFormat";
 import { useHubAction } from "./useHubAction";
+
+const ProjectsLayout = Schema.Literals(["list", "board"]);
 
 /** Projects, ranked by default. Tap a row to change it; the number is always its rank. */
 export function HubProjectsTable(props: {
@@ -37,6 +44,7 @@ export function HubProjectsTable(props: {
   const [query, setQuery] = useState("");
   const [showFinished, setShowFinished] = useState(false);
   const [sort, setSort] = useState<HubProjectSort>("rank");
+  const [layout, setLayout] = useLocalStorage("codr-hub:projects-layout", "list", ProjectsLayout);
   const [editing, setEditing] = useState<HubMergedProjectView | "new" | null>(null);
   const importDeez = useHubAction(
     serverEnvironment.hubImport,
@@ -53,7 +61,8 @@ export function HubProjectsTable(props: {
   const filter = showFinished ? "all" : "open";
   const rows = filterAndSortProjects(projects, {
     filter,
-    sort,
+    // The board orders each stage by rank; Sort applies to the list only.
+    sort: layout === "board" ? "rank" : sort,
     query,
     strategy: snapshot.strategy,
   });
@@ -147,17 +156,28 @@ export function HubProjectsTable(props: {
         </Empty>
       ) : (
         <>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Input
               size="default"
               type="search"
               aria-label="Search projects"
               placeholder="Search"
-              className="min-w-0 flex-1"
+              className="min-w-40 flex-1"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            <div className="w-36 shrink-0">
+            <ToggleGroup
+              aria-label="Projects layout"
+              variant="segmented"
+              value={[layout]}
+              onValueChange={(next) => {
+                if (next[0] === "list" || next[0] === "board") setLayout(next[0]);
+              }}
+            >
+              <Toggle value="list">List</Toggle>
+              <Toggle value="board">Stages</Toggle>
+            </ToggleGroup>
+            <div className={layout === "board" ? "hidden" : "w-36 shrink-0"}>
               <Select
                 value={sort}
                 onValueChange={(next) => {
@@ -190,6 +210,14 @@ export function HubProjectsTable(props: {
             <p className="text-sm text-muted-foreground">
               {query.trim() === "" ? "No open projects." : "No matches."}
             </p>
+          ) : layout === "board" ? (
+            <HubStageBoard
+              environmentId={environmentId}
+              rows={rows}
+              snapshot={snapshot}
+              selectedNodeName={selectedNodeName}
+              onEdit={setEditing}
+            />
           ) : (
             <ol className="flex flex-col divide-y border-y">
               {rows.map((view) => (
@@ -288,7 +316,7 @@ function ProjectRow(props: {
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5 font-medium text-foreground">
               <span className="truncate">{project.name}</span>
-              {running > 0 ? <RunningBadge count={running} /> : null}
+              {running > 0 ? <HubRunningBadge count={running} /> : null}
             </span>
             <span className="mt-0.5 block text-sm text-muted-foreground">
               {projectGlance({
@@ -328,19 +356,6 @@ function ProjectRow(props: {
         Board
       </Button>
     </div>
-  );
-}
-
-/**
- * The one live indicator for a project's autopilot work (docs/codr-hub/MOTION.md).
- * Mounted only while a job runs; the shine pauses offscreen, in hidden tabs,
- * and under reduced motion.
- */
-function RunningBadge({ count }: { count: number }) {
-  return (
-    <span ref={observeVisibleAnimation} className="live-tool-shine text-sm text-foreground">
-      {count > 1 ? `${count} running` : "running"}
-    </span>
   );
 }
 

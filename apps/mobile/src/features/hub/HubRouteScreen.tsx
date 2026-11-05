@@ -10,14 +10,7 @@ import {
   SORT_OPTIONS,
   type HubProjectSort,
 } from "@t3tools/client-runtime/codrHub/hubFormat";
-import {
-  hubWriteEnvironment,
-  t3ProjectForHubView,
-} from "@t3tools/client-runtime/codrHub/projectPickerModel";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+import { t3ProjectForHubView } from "@t3tools/client-runtime/codrHub/projectPickerModel";
 import type { HubActivityWindow, HubMergedProjectView } from "@t3tools/contracts";
 import { useNavigation } from "@react-navigation/native";
 import { useState, type ReactNode } from "react";
@@ -27,7 +20,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
-import * as Dialog from "../../components/ui/Dialog";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Menu } from "../../components/ui/Menu";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -35,22 +27,18 @@ import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/time";
 import { useProjects } from "../../state/entities";
-import { serverEnvironment } from "../../state/server";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
-import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
-import { useSelectWorkspaceTab } from "../workspace/useSelectWorkspaceTab";
-import {
-  hubProjectMenuActions,
-  hubProjectPatchForAction,
-  type HubProjectPatch,
-} from "./hubProjectMenu";
+import { hubProjectMenuActions, hubProjectPatchForAction } from "./hubProjectMenu";
 import { HubMachinePace } from "./HubPaceView";
+import { HubStagesView } from "./HubStagesView";
 import { useConnectedHubMachines, useHubInsights, useHubPortfolio } from "./useHubPortfolio";
+import { useHubProjectEdits } from "./useHubProjectEdits";
+import { useStartHubThread } from "./useStartHubThread";
 
-type HubView = "ranked" | "favorites" | "activity" | "pace";
+type HubView = "ranked" | "stages" | "favorites" | "activity" | "pace";
 const VIEW_OPTIONS = [
   { value: "ranked", label: "Ranked" },
+  { value: "stages", label: "Stages" },
   { value: "favorites", label: "Favourites" },
   { value: "activity", label: "Activity" },
   { value: "pace", label: "Pace" },
@@ -108,6 +96,12 @@ export function HubRouteScreen() {
             <HubMachinePace key={machine.environmentId} {...machine} />
           ))}
         </HubScroll>
+      ) : view === "stages" ? (
+        <HubStagesView
+          portfolio={portfolio}
+          bottomInset={insets.bottom}
+          header={<ViewPicker view={view} onSelect={setView} />}
+        />
       ) : view === "activity" ? (
         <ActivityView
           portfolio={portfolio}
@@ -164,22 +158,10 @@ function ProjectList(props: {
   const { portfolio, favoritesOnly, sort } = props;
   const snapshot = portfolio.anySnapshot!;
   const t3Projects = useProjects();
-  const selectDetail = useSelectWorkspaceDetail();
-  const selectTab = useSelectWorkspaceTab();
-  const upsertProject = useAtomCommand(serverEnvironment.hubUpsertProject, {
-    reportFailure: false,
-  });
-  // Saving commits to the portfolio repo, so show an edit before the snapshot catches up.
-  const [pendingEdits, setPendingEdits] = useState<ReadonlyMap<string, HubProjectPatch>>(new Map());
+  const startThread = useStartHubThread();
+  const { projects, editProject } = useHubProjectEdits(portfolio);
   const [showFinished, setShowFinished] = useState(false);
 
-  const projects =
-    pendingEdits.size === 0
-      ? portfolio.projects
-      : portfolio.projects.map((view) => {
-          const edit = pendingEdits.get(view.project.id);
-          return edit ? { ...view, project: { ...view.project, ...edit } } : view;
-        });
   const sorted = (filter: "open" | "all", by: HubProjectSort) =>
     filterAndSortProjects(projects, { filter, sort: by, query: "", strategy: snapshot.strategy });
   const isFinished = ({ project }: HubMergedProjectView) =>
@@ -194,32 +176,6 @@ function ProjectList(props: {
     ...sorted("open", sort).map((view) => ({ view, rank: rankById.get(view.project.id) ?? null })),
     ...(showFinished ? finished.map((view) => ({ view, rank: null })) : []),
   ].filter((row) => !favoritesOnly || row.view.project.favorite);
-
-  const editProject = async (view: HubMergedProjectView, edit: HubProjectPatch) => {
-    const environmentId = hubWriteEnvironment(view, portfolio.nodeNameByEnvironmentId, null);
-    if (environmentId === null) {
-      Dialog.alert(
-        `Could not update ${view.project.name}`,
-        "No connected machine has this project.",
-      );
-      return;
-    }
-    const { id } = view.project;
-    setPendingEdits((current) => new Map(current).set(id, { ...current.get(id), ...edit }));
-    const result = await upsertProject({ environmentId, input: { id, ...edit } });
-    setPendingEdits((current) => {
-      const next = new Map(current);
-      next.delete(id);
-      return next;
-    });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const failure = squashAtomCommandFailure(result);
-      Dialog.alert(
-        `Could not update ${view.project.name}`,
-        failure instanceof Error ? failure.message : "The request failed.",
-      );
-    }
-  };
 
   if (rows.length === 0) {
     return (
@@ -296,18 +252,7 @@ function ProjectList(props: {
                 accessibilityLabel={`${rank === null ? "Finished" : rank}, ${view.project.name}${target ? ", start a task" : ""}`}
                 disabled={target === null}
                 onPress={() => {
-                  if (!target) return;
-                  // A thread belongs to Chats; page tabs keep their tab bar over a pushed detail.
-                  selectTab("threads");
-                  selectDetail({
-                    name: "Thread",
-                    params: {
-                      draft: {
-                        environmentId: String(target.environmentId),
-                        projectId: String(target.id),
-                      },
-                    },
-                  });
+                  if (target) startThread(target);
                 }}
                 className="min-w-0 flex-1 flex-row items-center gap-3 py-3 ps-4"
               >

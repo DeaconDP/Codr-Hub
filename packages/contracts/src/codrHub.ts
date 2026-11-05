@@ -340,6 +340,12 @@ export const HubFleetReport = Schema.Struct({
 });
 export type HubFleetReport = typeof HubFleetReport.Type;
 
+export const HubTaskCounts = Schema.Struct({
+  total: NonNegativeInt,
+  done: NonNegativeInt,
+});
+export type HubTaskCounts = typeof HubTaskCounts.Type;
+
 export const HubSnapshot = Schema.Struct({
   nodeName: Schema.String,
   autopilotEnabled: Schema.Boolean,
@@ -353,6 +359,8 @@ export const HubSnapshot = Schema.Struct({
   deezProjectManagerPath: Schema.NullOr(Schema.String),
   fleet: Schema.optional(HubFleetReport),
   t3Sync: Schema.optional(HubT3SyncStatus),
+  /** Board task counts by project id; projects without tasks are absent. */
+  taskCounts: Schema.optional(Schema.Record(Schema.String, HubTaskCounts)),
 });
 export type HubSnapshot = typeof HubSnapshot.Type;
 

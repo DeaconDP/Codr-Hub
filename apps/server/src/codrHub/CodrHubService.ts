@@ -76,7 +76,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
-import { reduceBoard } from "./board.ts";
+import { countTasksByProject, reduceBoard } from "./board.ts";
 import {
   deezUuidToHubSlug,
   mergeDeezImport,
@@ -595,6 +595,7 @@ export const layer = Layer.effect(
           : null,
         fleet: yield* readFleetReport,
         t3Sync: { enabled: node.syncT3 === true, ...(yield* Ref.get(t3SyncRef)) },
+        taskCounts: countTasksByProject((yield* Ref.get(tasksRef)).values()),
       } satisfies HubSnapshot;
     });
 

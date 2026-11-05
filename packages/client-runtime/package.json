@@ -99,6 +99,11 @@
       "import": "./src/codrHub/hubActivity.ts",
       "default": "./src/codrHub/hubActivity.ts"
     },
+    "./codrHub/stageBoardModel": {
+      "types": "./src/codrHub/stageBoardModel.ts",
+      "import": "./src/codrHub/stageBoardModel.ts",
+      "default": "./src/codrHub/stageBoardModel.ts"
+    },
     "./authorization": {
       "types": "./src/authorization/index.ts",
       "default": "./src/authorization/index.ts"
