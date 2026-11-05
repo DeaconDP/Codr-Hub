@@ -33,7 +33,7 @@ An always-on usage overlay or compact widget. Extra providers that T3 doesn't pr
 
 ### E6. Native mobile hub (in progress)
 
-Mobile comes first: the owner tests on the phone. The Hub tab has Ranked, Favourites and Activity; Choose project puts favourites first. Next: the test queue, then the rest of the web Hub (board, strategy), then push notifications when autopilot work needs review.
+Mobile comes first: the owner tests on the phone. The Hub tab has Ranked, Stages, Favourites, Overview and Pace; Choose project puts favourites first. Next: the test queue, then the rest of the web Hub (board, strategy), then push notifications when autopilot work needs review.
 
 ### E7. Strategy and research layer
 

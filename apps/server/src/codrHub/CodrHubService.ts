@@ -65,6 +65,7 @@ import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
@@ -88,12 +89,23 @@ import {
 import { fleetShellBusy } from "./fleetDecide.ts";
 import { GIT_GLANCE_ARGS, parseGitGlance } from "./gitGlance.ts";
 import {
+  ExternalT3Home,
+  readExternalT3Runs,
+  readOwnT3Runs,
+  resolvePath,
+} from "./externalT3Runs.ts";
+import {
   activitySinceMs,
   bucketCommits,
+  buildDaily,
   detectPlatform,
+  groupRunsByRoot,
   isoFromMs,
+  makeDayKey,
   parseCommitTimestamps,
-  yearStartMs,
+  providerDriver,
+  summarizeAgentRuns,
+  untrackedInsights,
 } from "./insights.ts";
 import { selectLaunchModel } from "./modelPolicy.ts";
 import { computePace, type PaceDecision } from "./pacing.ts";
@@ -206,6 +218,8 @@ export const layer = Layer.effect(
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
     const scheduler = yield* Scheduler.Scheduler;
     const platform = yield* HostProcess.Platform;
+    const sql = yield* SqlClient.SqlClient;
+    const externalT3Home = yield* ExternalT3Home;
 
     // Everything below needs these services; provide them once.
     const io = <A, E>(
@@ -347,7 +361,7 @@ export const layer = Layer.effect(
         Effect.orElseSucceed(() => ""),
       );
 
-    const projectInsight = Effect.fn("codrHub.projectInsight")(function* (
+    const commitActivity = Effect.fn("CodrHubService.commitActivity")(function* (
       project: HubProject,
       cwd: string,
       now: number,
@@ -361,11 +375,11 @@ export const layer = Layer.effect(
       );
       const [last] = parseCommitTimestamps(yield* gitOut(cwd, ["log", "-1", "--format=%ct"]));
       return {
-        projectId: project.id,
         platform: detectPlatform(project.tags, entries),
-        commits: bucketCommits(recent, total, now, yearStartMs(now)),
+        commits: bucketCommits(recent, total, now),
         lastCommitAt: last === undefined ? null : isoFromMs(last * 1000),
-      } satisfies HubProjectInsight;
+        recent,
+      };
     });
 
     const computeInsights = Effect.gen(function* () {
@@ -375,19 +389,77 @@ export const layer = Layer.effect(
         const local = project.archived ? null : localPathOf(project, node.nodeName);
         return local ? [{ project, local }] : [];
       });
-      const projects = yield* Effect.forEach(
+      const found = yield* Effect.forEach(
         checkouts,
         ({ project, local }) =>
           Effect.gen(function* () {
             const exists = yield* fs.exists(local).pipe(Effect.orElseSucceed(() => false));
-            return exists ? [yield* projectInsight(project, local, now)] : [];
+            if (!exists) return [];
+            const [commits, root] = yield* Effect.all(
+              [commitActivity(project, local, now), io(resolvePath(local))],
+              { concurrency: 2 },
+            );
+            return [{ project, commits, root }];
           }),
         { concurrency: 4 },
       );
+      const projects = found.flat();
+      const sinceIso = isoFromMs(activitySinceMs(now));
+      const nowIso = isoFromMs(now);
+      const [own, external] = yield* Effect.all(
+        [
+          io(
+            readOwnT3Runs(sinceIso, nowIso).pipe(Effect.provideService(SqlClient.SqlClient, sql)),
+          ).pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("Codr-Hub could not read agent runs", { cause }).pipe(
+                Effect.as(null),
+              ),
+            ),
+          ),
+          io(readExternalT3Runs({ ownDbPath: config.dbPath, sinceIso, nowIso })).pipe(
+            Effect.provideService(ExternalT3Home, externalT3Home),
+          ),
+        ],
+        { concurrency: 2 },
+      );
+      const byRoot = groupRunsByRoot([own, external].filter((source) => source !== null));
+      const driversByInstance = new Map<string, string>(
+        (yield* providers.getProviders).map((provider) => [provider.instanceId, provider.driver]),
+      );
+      const driverOf = (provider: string) => providerDriver(provider, driversByInstance);
+      const dayKey = makeDayKey();
       return {
         nodeName: node.nodeName,
-        computedAt: isoFromMs(now),
-        projects: projects.flat(),
+        computedAt: nowIso,
+        projects: projects.map(({ project, commits, root }): HubProjectInsight => {
+          const runs = byRoot.get(root);
+          return {
+            projectId: project.id,
+            platform: commits.platform,
+            commits: commits.commits,
+            lastCommitAt: commits.lastCommitAt,
+            agent: summarizeAgentRuns({
+              recent: runs?.recent ?? [],
+              history: runs?.history ?? [],
+              nowMs: now,
+              driverOf,
+            }),
+            daily: buildDaily({
+              commitTimestampsSeconds: commits.recent,
+              runs: runs?.recent ?? [],
+              nowMs: now,
+              dayKey,
+            }),
+          };
+        }),
+        untracked: untrackedInsights({
+          byRoot,
+          trackedRoots: new Set(projects.map(({ root }) => root)),
+          nowMs: now,
+          driverOf,
+          dayKey,
+        }),
       } satisfies HubInsights;
     });
 

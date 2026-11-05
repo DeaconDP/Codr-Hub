@@ -191,6 +191,8 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Hub tab (second, after Threads) on iOS and Android, plus a command palette entry
 - [x] Ranked and Favourites lists: portfolio rank, star toggle, tap to start a task, show finished
 - [x] Activity: commit window, totals, commits per project, counting a project on two machines once
+- [x] Attention overview (iOS Overview tab, web Dashboard): 24h–all-time windows; agent turns, agent time, threads and commits per project; trend vs previous period, daily chart, provider mix, neglected high-priority projects
+- [ ] Owner: check the iOS Overview tab and web Dashboard against real data on every mesh node
 - [x] Choose project: favourites first, then manual order, with a star
 - [x] Edit menu on each row: priority, status, stage, strategy, archive and unarchive; rank updates at once
 - [x] Pace view per machine: pace bars, autopilot switch, Run once and Deploy reset, with confirmations for anything that starts agents or spends a reset

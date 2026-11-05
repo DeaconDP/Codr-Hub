@@ -688,18 +688,68 @@ export const HUB_PLATFORM_LABELS: Record<HubPlatform, string> = {
   other: "Other",
 };
 
-/** Dashboard activity windows. `ytd` starts on 1 January in the node's local time. */
-export const HubActivityWindow = Schema.Literals(["24h", "7d", "30d", "ytd", "all"]);
+/** Rolling dashboard windows, ending now. */
+export const HubActivityWindow = Schema.Literals([
+  "24h",
+  "7d",
+  "14d",
+  "21d",
+  "1m",
+  "3m",
+  "6m",
+  "1y",
+  "all",
+]);
 export type HubActivityWindow = typeof HubActivityWindow.Type;
+
+/** Window length in days; `all` has none. `1m` is 30 days, `3m` 91, `6m` 182, `1y` 365. */
+export const HUB_ACTIVITY_WINDOW_DAYS: Record<HubActivityWindow, number | null> = {
+  "24h": 1,
+  "7d": 7,
+  "14d": 14,
+  "21d": 21,
+  "1m": 30,
+  "3m": 91,
+  "6m": 182,
+  "1y": 365,
+  all: null,
+};
 
 export const HubActivityCounts = Schema.Struct({
   "24h": NonNegativeInt,
   "7d": NonNegativeInt,
-  "30d": NonNegativeInt,
-  ytd: NonNegativeInt,
+  "14d": NonNegativeInt,
+  "21d": NonNegativeInt,
+  "1m": NonNegativeInt,
+  "3m": NonNegativeInt,
+  "6m": NonNegativeInt,
+  "1y": NonNegativeInt,
   all: NonNegativeInt,
 });
 export type HubActivityCounts = typeof HubActivityCounts.Type;
+
+/** Agent work on this node's T3 project for the checkout, root and worktree threads alike. */
+export const HubAgentAttention = Schema.Struct({
+  /** Runs (turns) started in the window. */
+  runs: HubActivityCounts,
+  /** Distinct threads with a run started in the window. */
+  threads: HubActivityCounts,
+  /** Summed run wall time in whole minutes; a running run counts up to now. */
+  minutes: HubActivityCounts,
+  lastRunAt: Schema.NullOr(IsoDateTime),
+  /** Runs per provider driver (e.g. `claudeAgent`, `codex`), busiest first. */
+  providers: Schema.Array(Schema.Struct({ provider: Schema.String, runs: HubActivityCounts })),
+});
+export type HubAgentAttention = typeof HubAgentAttention.Type;
+
+/** One local calendar day (`YYYY-MM-DD`, node time zone). Days with no activity are omitted. */
+export const HubDailyActivity = Schema.Struct({
+  day: Schema.String,
+  commits: NonNegativeInt,
+  runs: NonNegativeInt,
+  minutes: NonNegativeInt,
+});
+export type HubDailyActivity = typeof HubDailyActivity.Type;
 
 /** One project's checkout on the answering node. Projects without a checkout are omitted. */
 export const HubProjectInsight = Schema.Struct({
@@ -708,15 +758,29 @@ export const HubProjectInsight = Schema.Struct({
   /** Commits on HEAD per window. All windows ship together so switching is instant. */
   commits: HubActivityCounts,
   lastCommitAt: Schema.NullOr(IsoDateTime),
+  agent: HubAgentAttention,
+  /** Sparse, oldest first, covering the last 365 days, for trends and sparklines. */
+  daily: Schema.Array(HubDailyActivity),
 });
 export type HubProjectInsight = typeof HubProjectInsight.Type;
 
 export const HubInsightsInput = Schema.Struct({});
 export type HubInsightsInput = typeof HubInsightsInput.Type;
 
+/** Agent work in a T3 workspace on the answering node that no Hub project's checkout matches. */
+export const HubUntrackedInsight = Schema.Struct({
+  /** The workspace's resolved path on the answering node. */
+  workspaceRoot: Schema.String,
+  name: Schema.String,
+  agent: HubAgentAttention,
+  daily: Schema.Array(HubDailyActivity),
+});
+export type HubUntrackedInsight = typeof HubUntrackedInsight.Type;
+
 export const HubInsights = Schema.Struct({
   nodeName: Schema.String,
   computedAt: IsoDateTime,
   projects: Schema.Array(HubProjectInsight),
+  untracked: Schema.Array(HubUntrackedInsight),
 });
 export type HubInsights = typeof HubInsights.Type;

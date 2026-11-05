@@ -202,6 +202,38 @@ export function t3ProjectForHubView<
   );
 }
 
+export type HubThreadTarget<P> =
+  | { readonly kind: "open"; readonly project: P }
+  | {
+      readonly kind: "add";
+      readonly environmentId: EnvironmentId;
+      readonly nodeName: string;
+      readonly workspaceRoot: string;
+    }
+  /** No connected machine has the folder; `nodeNames` are the offline ones that do. */
+  | { readonly kind: "unavailable"; readonly nodeNames: ReadonlyArray<string> };
+
+/**
+ * Where starting a thread from a portfolio project goes: its T3 project, or
+ * else its folder on a connected machine to add as a T3 project first.
+ */
+export function hubThreadTarget<
+  P extends { readonly environmentId: EnvironmentId; readonly workspaceRoot: string },
+>(
+  view: HubMergedProjectView,
+  projects: ReadonlyArray<P>,
+  nodeNameByEnvironmentId: ReadonlyMap<EnvironmentId, string>,
+): HubThreadTarget<P> {
+  const project = t3ProjectForHubView(view, projects, nodeNameByEnvironmentId);
+  if (project) return { kind: "open", project };
+  const checkouts = view.nodes.filter((node) => node.localPath !== null && node.pathExists);
+  for (const [environmentId, nodeName] of nodeNameByEnvironmentId) {
+    const node = checkouts.find((checkout) => checkout.nodeName === nodeName);
+    if (node) return { kind: "add", environmentId, nodeName, workspaceRoot: node.localPath! };
+  }
+  return { kind: "unavailable", nodeNames: checkouts.map((node) => node.nodeName) };
+}
+
 /**
  * The environment to write a row's portfolio change through, preferring the
  * primary one. A linked row needs a node whose portfolio already has the

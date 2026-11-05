@@ -1,8 +1,5 @@
 import { filterAndSortProjects } from "@t3tools/client-runtime/codrHub/hubFormat";
-import {
-  hubWriteEnvironment,
-  t3ProjectForHubView,
-} from "@t3tools/client-runtime/codrHub/projectPickerModel";
+import { hubWriteEnvironment } from "@t3tools/client-runtime/codrHub/projectPickerModel";
 import {
   groupByStageColumn,
   stageCardGlance,
@@ -27,14 +24,13 @@ import { Menu } from "../../components/ui/Menu";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { cn } from "../../lib/cn";
 import { uuidv4 } from "../../lib/uuid";
-import { useProjects } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { hubProjectMenuActions, hubProjectPatchForAction } from "./hubProjectMenu";
 import { useHubProjectEdits } from "./useHubProjectEdits";
 import type { useHubPortfolio } from "./useHubPortfolio";
-import { useStartHubThread } from "./useStartHubThread";
+import { hubThreadActionLabel, useStartHubThread } from "./useStartHubThread";
 
 type Portfolio = ReturnType<typeof useHubPortfolio>;
 
@@ -196,12 +192,8 @@ function ProjectTasks(props: { view: HubMergedProjectView; portfolio: Portfolio 
     props.portfolio.nodeNameByEnvironmentId,
     null,
   );
-  const target = t3ProjectForHubView(
-    props.view,
-    useProjects(),
-    props.portfolio.nodeNameByEnvironmentId,
-  );
-  const startThread = useStartHubThread();
+  const startThread = useStartHubThread(props.portfolio.nodeNameByEnvironmentId);
+  const threadTarget = startThread.targetFor(props.view);
   return (
     <View className="gap-1 border-t border-border-subtle px-4 pb-3 pt-2">
       {environmentId === null ? (
@@ -211,21 +203,20 @@ function ProjectTasks(props: { view: HubMergedProjectView; portfolio: Portfolio 
       ) : (
         <TaskChecklist environmentId={environmentId} projectId={props.view.project.id} />
       )}
-      {target ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => startThread(target)}
-          className="min-h-11 flex-row items-center gap-2"
-        >
-          <SymbolView
-            name="plus.bubble"
-            size={18}
-            tintColorClassName="accent-foreground"
-            type="monochrome"
-          />
-          <Text className="text-sm font-t3-bold">New thread</Text>
-        </Pressable>
-      ) : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`New thread, ${hubThreadActionLabel(threadTarget)}`}
+        onPress={() => startThread.start(props.view, threadTarget)}
+        className="min-h-11 flex-row items-center gap-2"
+      >
+        <SymbolView
+          name="plus.bubble"
+          size={18}
+          tintColorClassName="accent-foreground"
+          type="monochrome"
+        />
+        <Text className="text-sm font-t3-bold">New thread</Text>
+      </Pressable>
     </View>
   );
 }

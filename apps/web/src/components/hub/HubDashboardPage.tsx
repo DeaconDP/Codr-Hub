@@ -12,6 +12,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 
 import { isElectron } from "../../env";
 import { observeResize } from "../../lib/observeResize";
+import { HubAttentionPanel } from "./HubAttentionPanel";
 import { useEscapeToGoBack } from "./useEscapeToGoBack";
 import { projectIconColorClassName } from "../../projectIconColors";
 import { useEnvironments } from "../../state/environments";
@@ -50,6 +51,7 @@ import {
 } from "@t3tools/client-runtime/codrHub/hubFormat";
 import { squarifyTreemap, type TreemapRect } from "./hubTreemap";
 import { machineColor } from "@t3tools/client-runtime/codrHub/projectPickerModel";
+import { hubMergedProjectsKey } from "@t3tools/client-runtime/state/server";
 
 const MACHINE_GAP = 6;
 const MACHINE_HEADER = 30;
@@ -143,10 +145,16 @@ export function HubDashboardPage() {
       environment.connection.phase === "connected" && environment.serverConfig !== null,
   );
   const connectedKey = JSON.stringify(connected.map((entry) => entry.environmentId));
+  const mergeKey = hubMergedProjectsKey(
+    environments.map((entry) => ({
+      environmentId: entry.environmentId,
+      phase: entry.connection.phase,
+    })),
+  );
   const merged = useAtomValue(
-    connected.length === 0
+    mergeKey === null
       ? serverEnvironment.hubMergedProjectsEmpty
-      : serverEnvironment.hubMergedProjects(connectedKey),
+      : serverEnvironment.hubMergedProjects(mergeKey),
   );
   const insights = useHubInsights(connected.length === 0 ? null : connectedKey);
 
@@ -199,7 +207,7 @@ export function HubDashboardPage() {
         </WorkspacePageHeader>
         <ScrollArea className="min-h-0 flex-1">
           <WorkspacePageContainer width="wide">
-            {connected.length === 0 ? (
+            {connected.length === 0 && merged.anySnapshot === null ? (
               <p className="text-sm text-muted-foreground">
                 Connect an environment to open the dashboard.
               </p>
@@ -216,6 +224,34 @@ export function HubDashboardPage() {
             ) : (
               <div className="flex flex-col gap-4">
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  {/* Nine windows just overflow a 390px column; scroll rather than wrap mid-control. */}
+                  <div className="max-w-full overflow-x-auto">
+                    <ToggleGroup
+                      aria-label="Activity window"
+                      variant="segmented"
+                      value={[activityWindow]}
+                      onValueChange={(next) => {
+                        const value = HUB_ACTIVITY_WINDOWS.find((entry) => entry.value === next[0]);
+                        if (value) setActivityWindow(value.value);
+                      }}
+                    >
+                      {HUB_ACTIVITY_WINDOWS.map((entry) => (
+                        <ToggleGroupItem key={entry.value} value={entry.value}>
+                          {entry.label}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </div>
+                  <ActivityNote error={insights.error} pending={insights.isPending} />
+                </div>
+                <HubAttentionPanel
+                  projects={merged.projects}
+                  insights={insights.insights}
+                  strategy={strategy ?? []}
+                  window={activityWindow}
+                />
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-2">
+                  <h2 className="text-base font-semibold">Projects by machine</h2>
                   <ToggleGroup
                     aria-label="Size tiles by"
                     variant="segmented"
@@ -226,24 +262,8 @@ export function HubDashboardPage() {
                     }}
                   >
                     <ToggleGroupItem value="importance">Importance</ToggleGroupItem>
-                    <ToggleGroupItem value="activity">Activity</ToggleGroupItem>
+                    <ToggleGroupItem value="activity">Commits</ToggleGroupItem>
                   </ToggleGroup>
-                  <ToggleGroup
-                    aria-label="Commit window"
-                    variant="segmented"
-                    value={[activityWindow]}
-                    onValueChange={(next) => {
-                      const value = HUB_ACTIVITY_WINDOWS.find((entry) => entry.value === next[0]);
-                      if (value) setActivityWindow(value.value);
-                    }}
-                  >
-                    {HUB_ACTIVITY_WINDOWS.map((entry) => (
-                      <ToggleGroupItem key={entry.value} value={entry.value}>
-                        {entry.label}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                  <ActivityNote error={insights.error} pending={insights.isPending} />
                 </div>
                 <PlatformLegend
                   counts={dashboard.platformCounts}
@@ -294,7 +314,7 @@ function ActivityNote(props: { error: string | null; pending: boolean }) {
   if (props.pending) {
     return (
       <p role="status" className="text-xs text-muted-foreground">
-        Reading commit activity…
+        Reading activity…
       </p>
     );
   }

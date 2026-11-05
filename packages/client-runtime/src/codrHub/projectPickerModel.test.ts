@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   autoMachineColor,
+  hubThreadTarget,
   linkPickerRows,
   machineColor,
   parseTags,
@@ -102,6 +103,28 @@ describe("t3ProjectForHubView", () => {
     ]);
     expect(t3ProjectForHubView(view, projects, nodes)).toBe(projects[1]);
     expect(t3ProjectForHubView(hub("none", {}, [["Ada", null]]), projects, nodes)).toBeNull();
+  });
+
+  it("offers to add an unmatched folder on a connected machine, else names the offline ones", () => {
+    const projects = [{ environmentId: steve, workspaceRoot: "/home/d/web" }];
+    expect(hubThreadTarget(hub("web", {}, [["Steve", "/home/d/web"]]), projects, nodes)).toEqual({
+      kind: "open",
+      project: projects[0],
+    });
+    expect(
+      hubThreadTarget(
+        hub("api", {}, [
+          ["Bob", "/srv/api"],
+          ["Ada", "/home/d/api"],
+        ]),
+        projects,
+        nodes,
+      ),
+    ).toEqual({ kind: "add", environmentId: ada, nodeName: "Ada", workspaceRoot: "/home/d/api" });
+    expect(hubThreadTarget(hub("api", {}, [["Bob", "/srv/api"]]), projects, nodes)).toEqual({
+      kind: "unavailable",
+      nodeNames: ["Bob"],
+    });
   });
 });
 

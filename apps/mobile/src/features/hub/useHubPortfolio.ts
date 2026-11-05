@@ -1,4 +1,5 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { hubMergedProjectsKey } from "@t3tools/client-runtime/state/server";
 
 import { serverEnvironment } from "../../state/server";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
@@ -18,13 +19,20 @@ function useConnectedKey() {
 
 /** The Hub portfolio, merged across every connected environment. */
 export function useHubPortfolio() {
-  const { count, key } = useConnectedKey();
+  const { connectedEnvironments } = useRemoteConnectionStatus();
+  const connectedCount = useConnectedHubMachines().length;
+  const key = hubMergedProjectsKey(
+    connectedEnvironments.map(({ environmentId, connectionState }) => ({
+      environmentId,
+      phase: connectionState,
+    })),
+  );
   const merged = useAtomValue(
-    count === 0
+    key === null
       ? serverEnvironment.hubMergedProjectsEmpty
       : serverEnvironment.hubMergedProjects(key),
   );
-  return { ...merged, connectedCount: count };
+  return { ...merged, connectedCount };
 }
 
 /** Commit activity. Only the Activity view reads it, since a cold scan takes seconds. */

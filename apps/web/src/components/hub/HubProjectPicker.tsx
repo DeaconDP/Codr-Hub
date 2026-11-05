@@ -15,6 +15,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { hubMergedProjectsKey } from "@t3tools/client-runtime/state/server";
 import type { EnvironmentId, ProjectIconColor } from "@t3tools/contracts";
 import {
   CheckIcon,
@@ -106,11 +107,16 @@ export function HubProjectPicker(props: {
     (environment) =>
       environment.connection.phase === "connected" && environment.serverConfig !== null,
   );
-  const connectedKey = JSON.stringify(connected.map((environment) => environment.environmentId));
+  const mergeKey = hubMergedProjectsKey(
+    environments.map((environment) => ({
+      environmentId: environment.environmentId,
+      phase: environment.connection.phase,
+    })),
+  );
   const hub = useAtomValue(
-    connected.length === 0
+    mergeKey === null
       ? serverEnvironment.hubMergedProjectsEmpty
-      : serverEnvironment.hubMergedProjects(connectedKey),
+      : serverEnvironment.hubMergedProjects(mergeKey),
   );
   const nodeNames = hub.nodeNameByEnvironmentId;
   const nodeColors = hub.anySnapshot?.settings.nodeColors ?? {};

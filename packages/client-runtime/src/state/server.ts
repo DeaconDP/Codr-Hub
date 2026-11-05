@@ -49,6 +49,7 @@ import {
 
 // Re-exported so consumers' inferred `serverEnvironment` type stays nameable.
 export type { HubMergedInsightsLive, HubMergedProjectsLive } from "./hubMerge.ts";
+export { hubMergedProjectsKey } from "./hubMerge.ts";
 import {
   isRpcClientError,
   request,

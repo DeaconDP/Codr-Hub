@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { hubMergedProjectsKey } from "@t3tools/client-runtime/state/server";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
@@ -50,11 +51,16 @@ export function HubPage() {
       ? serverEnvironment.hubLive({ environmentId: environment.environmentId, input: {} })
       : null,
   );
-  const connectedKey = JSON.stringify(connected.map((entry) => entry.environmentId));
+  const mergeKey = hubMergedProjectsKey(
+    environments.map((entry) => ({
+      environmentId: entry.environmentId,
+      phase: entry.connection.phase,
+    })),
+  );
   const merged = useAtomValue(
-    connected.length === 0
+    mergeKey === null
       ? serverEnvironment.hubMergedProjectsEmpty
-      : serverEnvironment.hubMergedProjects(connectedKey),
+      : serverEnvironment.hubMergedProjects(mergeKey),
   );
   const snapshot = hub.data;
   const tableSnapshot = snapshot ?? merged.anySnapshot;

@@ -9,6 +9,9 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as TestClock from "effect/testing/TestClock";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import type {
   ApplicationStoredEvent,
   OrchestrationProjectShell,
@@ -18,6 +21,7 @@ import type {
 import * as ServerConfig from "../config.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import { runMigrations } from "../persistence/Migrations.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -25,6 +29,7 @@ import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Hub from "./CodrHubService.ts";
+import { ExternalT3Home } from "./externalT3Runs.ts";
 import * as Store from "./portfolioStore.ts";
 
 const serviceLayer = (
@@ -36,6 +41,7 @@ const serviceLayer = (
     Layer.provide(
       Layer.mergeAll(
         ServerConfig.layerTest(process.cwd(), baseDir),
+        Layer.succeed(ExternalT3Home, baseDir),
         Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
         Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({}),
         Layer.mock(ProjectService.ProjectService)(projects),
@@ -57,6 +63,7 @@ const serviceLayer = (
         }),
       ),
     ),
+    Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })),
   );
 
 const fixture = Effect.gen(function* () {
@@ -78,6 +85,37 @@ const fixture = Effect.gen(function* () {
   yield* Store.setRemote(peer, remote);
   yield* Store.syncPortfolio(peer);
   return { baseDir, paths, peer };
+});
+
+/** Inserts into a migrated T3 projection database. */
+const t3Rows = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  let ordinal = 0;
+  return {
+    project: (id: string, title: string, workspaceRoot: string) =>
+      sql`
+        INSERT INTO projection_projects
+          (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+        VALUES (${id}, ${title}, ${workspaceRoot}, '[]',
+          '2025-01-01T00:00:00.000Z', '2025-01-01T00:00:00.000Z')
+      `,
+    thread: (id: string, projectId: string, archivedAt: string | null, deletedAt: string | null) =>
+      sql`
+        INSERT INTO orchestration_v2_projection_threads
+          (thread_id, project_id, title, default_provider, runtime_mode, interaction_mode,
+           created_at, updated_at, archived_at, deleted_at, payload_json)
+        VALUES (${id}, ${projectId}, ${id}, 'codex', 'full-access', 'default',
+          '2025-01-01T00:00:00.000Z', '2025-01-01T00:00:00.000Z', ${archivedAt}, ${deletedAt}, '{}')
+      `,
+    run: (threadId: string, instance: string, requestedAt: string, completedAt: string | null) =>
+      sql`
+        INSERT INTO orchestration_v2_projection_runs
+          (run_id, thread_id, ordinal, provider, provider_instance_id, status, requested_at,
+           completed_at, payload_json)
+        VALUES (${`run-${(ordinal += 1)}`}, ${threadId}, ${ordinal}, ${instance}, ${instance},
+          'completed', ${requestedAt}, ${completedAt}, '{}')
+      `,
+  };
 });
 
 const snapshot = (hub: Hub.CodrHubService["Service"]) =>
@@ -503,7 +541,7 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
-  it.effect("reports platform and commit activity for this node's checkouts", () =>
+  it.effect("reports platform, commit and agent activity for this node's checkouts", () =>
     Effect.gen(function* () {
       const { baseDir } = yield* fixture;
       const fs = yield* FileSystem.FileSystem;
@@ -519,11 +557,60 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
       yield* Store.git(game, ["add", "."]);
       yield* Store.git(game, [...commit, "--quiet", "-m", "one"]);
       yield* Store.git(game, [...commit, "--quiet", "--allow-empty", "-m", "two"]);
+      // Real commits land after this, so they count in every window.
+      yield* TestClock.setTime(Date.parse("2026-06-01T12:00:00.000Z"));
+      // The Hub knows the checkout by a symlink; T3 stores the real path.
+      const links = path.join(baseDir, "links");
+      yield* fs.makeDirectory(links);
+      yield* fs.symlink(game, path.join(links, "game"));
+      const scratch = path.join(baseDir, "scratch");
+      yield* fs.makeDirectory(scratch);
+      const externalDb = path.join(baseDir, ".t3", "userdata", "statev2.sqlite");
+      yield* fs.makeDirectory(path.dirname(externalDb), { recursive: true });
       yield* Effect.gen(function* () {
+        yield* runMigrations();
+        const t3 = yield* t3Rows;
+        yield* t3.project("ext-game", "Game", game);
+        yield* t3.project("ext-scratch", "", scratch);
+        yield* t3.thread("ext", "ext-game", null, null);
+        yield* t3.thread("ext-scratch", "ext-scratch", null, null);
+        yield* t3.run(
+          "ext",
+          "claudeAgent_home",
+          "2026-06-01T11:00:00.000Z",
+          "2026-06-01T11:10:00.000Z",
+        );
+        yield* t3.run(
+          "ext-scratch",
+          "codex",
+          "2026-05-20T09:00:00.000Z",
+          "2026-05-20T09:01:00.000Z",
+        );
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: externalDb })));
+      yield* Effect.gen(function* () {
+        yield* runMigrations();
+        const { project, thread, run } = yield* t3Rows;
+        yield* project("t3-game", "Game", game);
+        yield* project("t3-other", "Scratch", scratch);
+        yield* thread("live", "t3-game", null, null);
+        yield* thread("shelved", "t3-game", "2026-05-01T00:00:00.000Z", null);
+        yield* thread("gone", "t3-game", null, "2026-05-01T00:00:00.000Z");
+        yield* thread("elsewhere", "t3-other", null, null);
+        yield* run("live", "codex", "2026-06-01T10:00:00.000Z", "2026-06-01T10:20:00.000Z");
+        yield* run(
+          "shelved",
+          "claudeAgent_work",
+          "2026-05-25T09:00:00.000Z",
+          "2026-05-25T09:05:00.000Z",
+        );
+        yield* run("live", "codex", "2024-06-01T09:00:00.000Z", "2024-06-01T09:03:00.000Z");
+        yield* run("gone", "codex", "2026-06-01T09:00:00.000Z", "2026-06-01T09:30:00.000Z");
+        yield* run("elsewhere", "codex", "2026-06-01T09:00:00.000Z", "2026-06-01T09:30:00.000Z");
+
         const hub = yield* Hub.CodrHubService;
         yield* hub.upsertProjects({
           projects: [
-            { name: "Game", localPath: game, tags: ["Web"] },
+            { name: "Game", localPath: path.join(links, "game"), tags: ["Web"] },
             { name: "Site", localPath: site },
             { name: "Gone", localPath: path.join(baseDir, "missing") },
           ],
@@ -531,16 +618,41 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
         const result = yield* hub.insights();
         const byId = new Map(result.projects.map((insight) => [insight.projectId, insight]));
         expect([...byId.keys()].toSorted()).toEqual(["game", "site"]);
-        expect(byId.get("game")).toMatchObject({
+        const gameInsight = byId.get("game");
+        expect(gameInsight).toMatchObject({
           platform: "unreal",
-          commits: { "24h": 2, "7d": 2, "30d": 2, ytd: 2, all: 2 },
+          commits: { "24h": 2, "7d": 2, "1m": 2, "1y": 2, all: 2 },
+          agent: {
+            runs: { "24h": 2, "7d": 2, "14d": 3, "1y": 3, all: 4 },
+            threads: { "24h": 2, "14d": 3, all: 3 },
+            minutes: { "24h": 30, "14d": 35, all: 38 },
+            lastRunAt: "2026-06-01T11:00:00.000Z",
+            providers: [
+              { provider: "codex", runs: { "24h": 1, all: 2 } },
+              { provider: "claudeAgent", runs: { "24h": 1, all: 2 } },
+            ],
+          },
         });
-        expect(byId.get("game")?.lastCommitAt).not.toBeNull();
+        expect(gameInsight?.lastCommitAt).not.toBeNull();
+        expect(gameInsight?.daily.filter((day) => day.runs > 0)).toEqual([
+          { day: expect.any(String), commits: 0, runs: 1, minutes: 5 },
+          { day: expect.any(String), commits: expect.any(Number), runs: 2, minutes: 30 },
+        ]);
+        expect(gameInsight?.daily.reduce((sum, day) => sum + day.commits, 0)).toBe(2);
         expect(byId.get("site")).toMatchObject({
           platform: "web",
           commits: { "24h": 0, all: 0 },
           lastCommitAt: null,
+          agent: { runs: { all: 0 }, lastRunAt: null, providers: [] },
+          daily: [],
         });
+        expect(result.untracked).toMatchObject([
+          {
+            workspaceRoot: yield* fs.realPath(scratch),
+            name: "Scratch",
+            agent: { runs: { "7d": 1, all: 2 }, minutes: { all: 31 } },
+          },
+        ]);
       }).pipe(Effect.provide(serviceLayer(baseDir)));
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );

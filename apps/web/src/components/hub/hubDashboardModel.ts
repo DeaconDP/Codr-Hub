@@ -13,6 +13,7 @@ import {
   type HubSdlcStage,
   type HubStrategyPriority,
 } from "@t3tools/contracts";
+import type { HubAttentionDay } from "@t3tools/client-runtime/codrHub/hubActivity";
 
 export type HubDashboardSizeMode = "importance" | "activity";
 
@@ -244,4 +245,42 @@ export function buildHubDashboard(input: {
   ) as Record<HubPlatform, number>;
 
   return { machines, platformCounts, projectCount: views.length };
+}
+
+export type HubAttentionBar = {
+  readonly from: string;
+  readonly to: string;
+  readonly commits: number;
+  readonly runs: number;
+  readonly minutes: number;
+};
+
+const DAILY_BAR_LIMIT = 31;
+
+/**
+ * Chart bars for the attention series: one per day up to a month, otherwise one
+ * per week counted back from today, so only the oldest bar can be a partial week.
+ */
+export function bucketHubSeries(series: ReadonlyArray<HubAttentionDay>): HubAttentionBar[] {
+  const size = series.length <= DAILY_BAR_LIMIT ? 1 : 7;
+  const bars: HubAttentionBar[] = [];
+  for (let end = series.length; end > 0; end -= size) {
+    const days = series.slice(Math.max(0, end - size), end);
+    bars.push({
+      from: days[0]!.day,
+      to: days.at(-1)!.day,
+      commits: days.reduce((sum, day) => sum + day.commits, 0),
+      runs: days.reduce((sum, day) => sum + day.runs, 0),
+      minutes: days.reduce((sum, day) => sum + day.minutes, 0),
+    });
+  }
+  return bars.reverse();
+}
+
+/** "+40%", "-12%", "new" when the previous period had none, or null when it is unknown. */
+export function attentionChangeLabel(value: number, previous: number | null): string | null {
+  if (previous === null) return null;
+  if (previous === 0) return value === 0 ? null : "new";
+  const percent = Math.round(((value - previous) / previous) * 100);
+  return percent > 0 ? `+${percent}%` : `${percent}%`;
 }

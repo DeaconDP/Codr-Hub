@@ -20,6 +20,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import * as ServerConfig from "../config.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
@@ -217,6 +218,7 @@ const nodeHarness = (baseDir: string, initialProviders: ReadonlyArray<ServerProv
     Layer.provide(
       Layer.mergeAll(
         ServerConfig.layerTest(process.cwd(), baseDir),
+        NodeSqliteClient.layer({ filename: ":memory:" }),
         Layer.mock(Providers.ProviderRegistry)({
           getProviders: Effect.sync(() => currentProviders),
         }),

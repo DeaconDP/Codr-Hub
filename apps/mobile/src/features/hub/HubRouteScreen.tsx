@@ -1,8 +1,4 @@
 import {
-  buildHubActivity,
-  HUB_ACTIVITY_WINDOWS,
-} from "@t3tools/client-runtime/codrHub/hubActivity";
-import {
   filterAndSortProjects,
   labelOf,
   PRIORITY_OPTIONS,
@@ -10,11 +6,10 @@ import {
   SORT_OPTIONS,
   type HubProjectSort,
 } from "@t3tools/client-runtime/codrHub/hubFormat";
-import { t3ProjectForHubView } from "@t3tools/client-runtime/codrHub/projectPickerModel";
-import type { HubActivityWindow, HubMergedProjectView } from "@t3tools/contracts";
+import type { HubMergedProjectView } from "@t3tools/contracts";
 import { useNavigation } from "@react-navigation/native";
 import { useState, type ReactNode } from "react";
-import { Pressable, RefreshControl, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
@@ -25,22 +20,21 @@ import { Menu } from "../../components/ui/Menu";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { cn } from "../../lib/cn";
-import { relativeTime } from "../../lib/time";
-import { useProjects } from "../../state/entities";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { hubProjectMenuActions, hubProjectPatchForAction } from "./hubProjectMenu";
+import { HubOverviewView } from "./HubOverviewView";
 import { HubMachinePace } from "./HubPaceView";
 import { HubStagesView } from "./HubStagesView";
-import { useConnectedHubMachines, useHubInsights, useHubPortfolio } from "./useHubPortfolio";
+import { useConnectedHubMachines, useHubPortfolio } from "./useHubPortfolio";
 import { useHubProjectEdits } from "./useHubProjectEdits";
-import { useStartHubThread } from "./useStartHubThread";
+import { hubThreadActionLabel, useStartHubThread } from "./useStartHubThread";
 
-type HubView = "ranked" | "stages" | "favorites" | "activity" | "pace";
+type HubView = "ranked" | "stages" | "favorites" | "overview" | "pace";
 const VIEW_OPTIONS = [
   { value: "ranked", label: "Ranked" },
   { value: "stages", label: "Stages" },
   { value: "favorites", label: "Favourites" },
-  { value: "activity", label: "Activity" },
+  { value: "overview", label: "Overview" },
   { value: "pace", label: "Pace" },
 ] as const satisfies readonly { value: HubView; label: string }[];
 
@@ -57,7 +51,7 @@ export function HubRouteScreen() {
 
   return (
     <SettingsScreen title="Hub" workspaceRoot>
-      {portfolio.connectedCount === 0 ? (
+      {portfolio.connectedCount === 0 && !hasPortfolio ? (
         <HubScroll bottomInset={insets.bottom}>
           <EmptyState
             variant="plain"
@@ -78,9 +72,11 @@ export function HubRouteScreen() {
           />
         </HubScroll>
       ) : !hasPortfolio ? (
-        <View className="flex-1 items-center justify-center" accessibilityLabel="Loading Hub">
-          <AppActivityIndicator colorClassName="accent-icon-muted" />
-        </View>
+        <HubScroll bottomInset={insets.bottom}>
+          <View className="items-center py-8" accessibilityLabel="Loading Hub">
+            <AppActivityIndicator colorClassName="accent-icon-muted" />
+          </View>
+        </HubScroll>
       ) : portfolio.projects.length === 0 ? (
         <HubScroll bottomInset={insets.bottom}>
           <EmptyState
@@ -102,8 +98,8 @@ export function HubRouteScreen() {
           bottomInset={insets.bottom}
           header={<ViewPicker view={view} onSelect={setView} />}
         />
-      ) : view === "activity" ? (
-        <ActivityView
+      ) : view === "overview" ? (
+        <HubOverviewView
           portfolio={portfolio}
           bottomInset={insets.bottom}
           header={<ViewPicker view={view} onSelect={setView} />}
@@ -157,8 +153,7 @@ function ProjectList(props: {
 }) {
   const { portfolio, favoritesOnly, sort } = props;
   const snapshot = portfolio.anySnapshot!;
-  const t3Projects = useProjects();
-  const startThread = useStartHubThread();
+  const startThread = useStartHubThread(portfolio.nodeNameByEnvironmentId);
   const { projects, editProject } = useHubProjectEdits(portfolio);
   const [showFinished, setShowFinished] = useState(false);
 
@@ -225,7 +220,7 @@ function ProjectList(props: {
       </View>
       <View collapsable={false} className="overflow-hidden rounded-[24px] bg-grouped-card">
         {rows.map(({ view, rank }, index) => {
-          const target = t3ProjectForHubView(view, t3Projects, portfolio.nodeNameByEnvironmentId);
+          const threadTarget = startThread.targetFor(view);
           const priority =
             view.project.priority === "none"
               ? null
@@ -234,8 +229,9 @@ function ProjectList(props: {
             project: view.project,
             nodes: view.nodes,
             selectedNodeName:
-              (target && portfolio.nodeNameByEnvironmentId.get(target.environmentId)) ??
-              snapshot.nodeName,
+              (threadTarget.kind === "open"
+                ? portfolio.nodeNameByEnvironmentId.get(threadTarget.project.environmentId)
+                : undefined) ?? snapshot.nodeName,
             strategy: snapshot.strategy,
             mode: snapshot.settings.sdlcMode,
           });
@@ -249,11 +245,8 @@ function ProjectList(props: {
             >
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`${rank === null ? "Finished" : rank}, ${view.project.name}${target ? ", start a task" : ""}`}
-                disabled={target === null}
-                onPress={() => {
-                  if (target) startThread(target);
-                }}
+                accessibilityLabel={`${rank === null ? "Finished" : rank}, ${view.project.name}, ${hubThreadActionLabel(threadTarget)}`}
+                onPress={() => startThread.start(view, threadTarget)}
                 className="min-w-0 flex-1 flex-row items-center gap-3 py-3 ps-4"
               >
                 <Text className="w-6 text-center text-sm font-t3-bold text-foreground-muted">
@@ -331,117 +324,6 @@ function ProjectList(props: {
           </Text>
         </Pressable>
       ) : null}
-    </View>
-  );
-}
-
-function ActivityView(props: { portfolio: Portfolio; bottomInset: number; header: ReactNode }) {
-  const insights = useHubInsights();
-  const [activityWindow, setActivityWindow] = useState<HubActivityWindow>("7d");
-  const activity = buildHubActivity({
-    projects: props.portfolio.projects,
-    insights: insights.insights,
-    strategy: props.portfolio.anySnapshot?.strategy ?? [],
-    window: activityWindow,
-  });
-  const maxCommits = activity.rows[0]?.commits ?? 0;
-  const windowLabel = labelOf(HUB_ACTIVITY_WINDOWS, activityWindow);
-  const notes = [
-    activity.quietCount > 0 ? `${activity.quietCount} quiet` : null,
-    activity.unreportedCount > 0 ? `${activity.unreportedCount} not on a connected machine` : null,
-  ].filter((note) => note !== null);
-  const loading = insights.isPending && insights.insights.length === 0;
-
-  return (
-    <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
-      showsVerticalScrollIndicator={false}
-      className="flex-1"
-      contentContainerClassName="gap-5 px-5 pt-4"
-      contentContainerStyle={{ paddingBottom: Math.max(props.bottomInset, 18) + 18 }}
-      refreshControl={
-        <RefreshControl refreshing={insights.isPending} onRefresh={insights.refresh} />
-      }
-    >
-      {props.header}
-      <SegmentedControl
-        options={HUB_ACTIVITY_WINDOWS}
-        selected={activityWindow}
-        onSelect={setActivityWindow}
-        size="compact"
-      />
-      {loading ? (
-        <View className="items-center py-8" accessibilityLabel="Loading activity">
-          <AppActivityIndicator colorClassName="accent-icon-muted" />
-        </View>
-      ) : (
-        <>
-          <View className="flex-row gap-3">
-            <Stat label={`Commits · ${windowLabel}`} value={activity.totalCommits} />
-            <Stat label="Active projects" value={activity.rows.length} />
-            <Stat label="Agents running" value={activity.runningCount} />
-          </View>
-          {insights.error !== null ? (
-            <Text className="text-xs leading-normal text-foreground-muted">
-              Some activity is unavailable: {insights.error}
-            </Text>
-          ) : null}
-          {activity.rows.length === 0 ? (
-            <EmptyState
-              variant="plain"
-              title={`No commits in ${windowLabel}`}
-              detail="Try a longer window."
-            />
-          ) : (
-            <View
-              collapsable={false}
-              className="gap-4 rounded-[24px] bg-grouped-card px-4 py-4"
-              accessibilityLabel={`Commits per project, ${windowLabel}`}
-            >
-              {activity.rows.map((row) => (
-                <View
-                  key={row.projectId}
-                  className="gap-1.5"
-                  accessible
-                  accessibilityLabel={`${row.name}, ${row.commits} ${row.commits === 1 ? "commit" : "commits"}`}
-                >
-                  <View className="flex-row items-baseline gap-2">
-                    <Text className="min-w-0 flex-1 text-sm font-t3-bold" numberOfLines={1}>
-                      {row.name}
-                    </Text>
-                    {row.lastCommitAt ? (
-                      <Text className="text-xs text-foreground-muted">
-                        {relativeTime(row.lastCommitAt)} ago
-                      </Text>
-                    ) : null}
-                    <Text className="text-sm font-t3-bold">{row.commits}</Text>
-                  </View>
-                  <View
-                    className="h-1 rounded-full bg-primary"
-                    style={{ width: `${Math.max(2, (row.commits / maxCommits) * 100)}%` }}
-                  />
-                </View>
-              ))}
-            </View>
-          )}
-          {notes.length > 0 ? (
-            <Text className="text-center text-xs text-foreground-muted">{notes.join(" · ")}</Text>
-          ) : null}
-        </>
-      )}
-    </ScrollView>
-  );
-}
-
-function Stat(props: { label: string; value: number }) {
-  return (
-    <View
-      className="min-w-0 flex-1 gap-1 rounded-[20px] bg-grouped-card p-3"
-      accessible
-      accessibilityLabel={`${props.label}: ${props.value}`}
-    >
-      <Text className="text-2xl font-t3-bold">{props.value.toLocaleString()}</Text>
-      <Text className="text-xs leading-snug text-foreground-muted">{props.label}</Text>
     </View>
   );
 }

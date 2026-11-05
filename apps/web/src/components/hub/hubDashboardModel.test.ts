@@ -7,7 +7,13 @@ import type {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildHubDashboard, importanceWeight, platformFromTags } from "./hubDashboardModel";
+import {
+  attentionChangeLabel,
+  bucketHubSeries,
+  buildHubDashboard,
+  importanceWeight,
+  platformFromTags,
+} from "./hubDashboardModel";
 
 const hub = (
   id: string,
@@ -56,8 +62,12 @@ const hub = (
 const counts = (sevenDays: number): HubActivityCounts => ({
   "24h": 0,
   "7d": sevenDays,
-  "30d": sevenDays,
-  ytd: sevenDays,
+  "14d": sevenDays,
+  "21d": sevenDays,
+  "1m": sevenDays,
+  "3m": sevenDays,
+  "6m": sevenDays,
+  "1y": sevenDays,
   all: sevenDays,
 });
 
@@ -72,7 +82,16 @@ const insights = (
     platform,
     commits: counts(commits),
     lastCommitAt: null,
+    agent: {
+      runs: counts(0),
+      threads: counts(0),
+      minutes: counts(0),
+      lastRunAt: null,
+      providers: [],
+    },
+    daily: [],
   })),
+  untracked: [],
 });
 
 const strategy = [
@@ -217,5 +236,48 @@ describe("buildHubDashboard", () => {
       ],
     });
     expect(dashboard.machines.map((machine) => machine.nodeName)).toEqual(["Big", "Small"]);
+  });
+});
+
+describe("bucketHubSeries", () => {
+  const days = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      day: `d${String(index).padStart(3, "0")}`,
+      commits: 1,
+      runs: index,
+      minutes: 2,
+    }));
+
+  it("keeps one bar per day up to a month", () => {
+    const bars = bucketHubSeries(days(31));
+    expect(bars).toHaveLength(31);
+    expect(bars[30]).toEqual({ from: "d030", to: "d030", commits: 1, runs: 30, minutes: 2 });
+  });
+
+  it("sums longer windows into weeks ending today, leaving the partial week oldest", () => {
+    const bars = bucketHubSeries(days(91));
+    expect(bars).toHaveLength(13);
+    expect(bars.at(-1)).toEqual({
+      from: "d084",
+      to: "d090",
+      commits: 7,
+      runs: 84 + 85 + 86 + 87 + 88 + 89 + 90,
+      minutes: 14,
+    });
+    const partial = bucketHubSeries(days(40));
+    expect(partial).toHaveLength(6);
+    expect(partial[0]).toMatchObject({ from: "d000", to: "d004", commits: 5 });
+    expect(partial.reduce((sum, bar) => sum + bar.commits, 0)).toBe(40);
+  });
+});
+
+describe("attentionChangeLabel", () => {
+  it("labels change against the previous period", () => {
+    expect(attentionChangeLabel(14, 10)).toBe("+40%");
+    expect(attentionChangeLabel(5, 10)).toBe("-50%");
+    expect(attentionChangeLabel(10, 10)).toBe("0%");
+    expect(attentionChangeLabel(3, 0)).toBe("new");
+    expect(attentionChangeLabel(0, 0)).toBeNull();
+    expect(attentionChangeLabel(3, null)).toBeNull();
   });
 });
