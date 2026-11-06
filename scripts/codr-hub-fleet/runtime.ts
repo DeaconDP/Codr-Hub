@@ -53,6 +53,25 @@ export function fleetOptions(args: readonly string[], repoRoot: string) {
   };
 }
 
+/**
+ * The child's environment. Login units start with a bare PATH, and `vp i` runs `.pnpmfile.cjs`
+ * through `node`, so Node's own directory and the checkout's bins go first.
+ */
+export function childEnv(env: NodeJS.ProcessEnv, repoRoot: string, nodePath: string) {
+  const next = { ...env };
+  const pathKey = Object.keys(next).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
+  next[pathKey] = [
+    NodePath.join(repoRoot, "node_modules", ".bin"),
+    NodePath.dirname(nodePath),
+    next[pathKey],
+  ]
+    .filter(Boolean)
+    .join(NodePath.delimiter);
+  // The current agent may run inside a different T3 server with its own port.
+  delete next.T3CODE_PORT;
+  return next;
+}
+
 export function readChildRecord(value: unknown): ChildRecord | null {
   if (typeof value !== "object" || value === null) return null;
   if (

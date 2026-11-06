@@ -7,7 +7,7 @@ import * as Path from "effect/Path";
 
 import { deriveServerPaths } from "../../apps/server/src/config.ts";
 import { decide } from "../../apps/server/src/codrHub/fleetDecide.ts";
-import { fleetOptions, observeFleetChild, readChildRecord } from "./runtime.ts";
+import { childEnv, fleetOptions, observeFleetChild, readChildRecord } from "./runtime.ts";
 
 const nowMs = Date.parse("2026-10-26T10:00:00Z");
 const child = { pid: 100, sha: "old", startedAt: nowMs - 10_000 };
@@ -129,5 +129,21 @@ describe("fleet parent observations", () => {
   it("ignores a dead runtime record and lets dev-runner choose the next port", () => {
     expect(observe({ child: null, isAlive: () => false })).toEqual({ _tag: "Down", port: "free" });
     expect(observe({ child: null, runtime: null })).toEqual({ _tag: "Down", port: "free" });
+  });
+});
+
+describe("childEnv", () => {
+  it("puts Node and the checkout's bins on a login unit's bare PATH", () => {
+    const env = childEnv(
+      { PATH: "/usr/bin:/bin", T3CODE_PORT: "3773" },
+      "/repo",
+      "/Users/me/.nvm/versions/node/v24/bin/node",
+    );
+    expect(env.PATH?.split(NodePath.delimiter)).toEqual([
+      NodePath.join("/repo", "node_modules", ".bin"),
+      NodePath.dirname("/Users/me/.nvm/versions/node/v24/bin/node"),
+      "/usr/bin:/bin",
+    ]);
+    expect(env.T3CODE_PORT).toBeUndefined();
   });
 });

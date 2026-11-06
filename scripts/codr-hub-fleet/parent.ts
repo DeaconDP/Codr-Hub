@@ -19,7 +19,13 @@ import {
   type FleetDecision,
 } from "../../apps/server/src/codrHub/fleetDecide.ts";
 import { fetchOrigin, fastForward, hashFile, inspectCheckout } from "./git.ts";
-import { fleetOptions, observeFleetChild, readChildRecord, type ChildRecord } from "./runtime.ts";
+import {
+  childEnv,
+  fleetOptions,
+  observeFleetChild,
+  readChildRecord,
+  type ChildRecord,
+} from "./runtime.ts";
 import {
   FLEET_LABEL,
   FLEET_TASK_NAME,
@@ -164,18 +170,8 @@ const vpCommand = () => {
 const startChild = (sha: string) => {
   NodeFS.mkdirSync(stateDir, { recursive: true });
   const log = NodeFS.openSync(logPath, "a");
-  const env = { ...process.env };
+  const env = childEnv(process.env, repoRoot, process.execPath);
   const startedAt = Date.now();
-  const pathKey = Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
-  env[pathKey] = [
-    NodePath.join(repoRoot, "node_modules", ".bin"),
-    NodePath.dirname(process.execPath),
-    env[pathKey],
-  ]
-    .filter(Boolean)
-    .join(NodePath.delimiter);
-  // The current agent may run inside a different T3 server with its own port.
-  delete env.T3CODE_PORT;
   const child = NodeChildProcess.spawn(
     process.execPath,
     ["scripts/dev-runner.ts", "dev", ...options.serverArgs],
@@ -200,6 +196,7 @@ const installDependencies = async (): Promise<boolean> => {
     const child = NodeChildProcess.spawn(vp.command, [...vp.args, "i"], {
       cwd: repoRoot,
       stdio: ["ignore", log, log],
+      env: childEnv(process.env, repoRoot, process.execPath),
     });
     child.on("close", (status) => resolve(status ?? 1));
     child.on("error", () => resolve(1));
