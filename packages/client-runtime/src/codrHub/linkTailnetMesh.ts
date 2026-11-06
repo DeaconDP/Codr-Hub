@@ -1,4 +1,4 @@
-import { WS_METHODS, type EnvironmentId } from "@t3tools/contracts";
+import { WS_METHODS, type EnvironmentId, type HubLinkTailnetResult } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -67,6 +67,29 @@ export function catalogDecision(
   return already ? "skip" : "save";
 }
 
+/** Codr-Hub's dev share port, which the server's mesh also probes on every peer. */
+const CODR_HUB_PORT = 5733;
+
+/**
+ * Codr-Hub origins to try on tailnet machines this client already saved, such as a stock
+ * T3 connection to a machine that also runs Codr-Hub. Origins already saved are skipped.
+ */
+export function codrHubProbeOrigins(savedOrigins: readonly string[]): readonly string[] {
+  const probes: string[] = [];
+  for (const saved of savedOrigins) {
+    let host: string;
+    try {
+      host = new URL(saved).hostname.toLowerCase();
+    } catch {
+      continue;
+    }
+    if (!host.endsWith(".ts.net")) continue;
+    const probe = `https://${host}:${CODR_HUB_PORT}`;
+    if (!savedOrigins.includes(probe) && !probes.includes(probe)) probes.push(probe);
+  }
+  return probes;
+}
+
 function introducerRank(entry: ConnectionCatalogEntry): number {
   const routes = connectionRoutes(entry);
   if (routes.some((route) => route.target._tag === "PrimaryConnectionTarget")) return 0;
@@ -74,18 +97,18 @@ function introducerRank(entry: ConnectionCatalogEntry): number {
   return 2;
 }
 
-const currentIntroducer = Effect.fn("codrHub.linkTailnetMesh.introducer")(function* () {
+/** Connected environments, best introducer first. Stock T3 servers are among them. */
+const connectedIntroducers = Effect.fn("codrHub.linkTailnetMesh.introducers")(function* () {
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
   const entries = yield* SubscriptionRef.get(registry.entries);
-  let best: { readonly id: EnvironmentId; readonly rank: number } | undefined;
+  const connected: { readonly id: EnvironmentId; readonly rank: number }[] = [];
   for (const [id, entry] of entries) {
     if (!entry.enabled) continue;
     const state = yield* registry.state(id).pipe(Effect.option);
     if (Option.isNone(state) || state.value.phase !== "connected") continue;
-    const rank = introducerRank(entry);
-    if (best === undefined || rank < best.rank) best = { id, rank };
+    connected.push({ id, rank: introducerRank(entry) });
   }
-  return best?.id;
+  return connected.sort((a, b) => a.rank - b.rank).map(({ id }) => id);
 });
 
 const savedRoutes = Effect.fn("codrHub.linkTailnetMesh.savedRoutes")(function* () {
@@ -114,10 +137,27 @@ const savedRoutes = Effect.fn("codrHub.linkTailnetMesh.savedRoutes")(function* (
 
 const linkOnce = Effect.fn("codrHub.linkTailnetMesh.once")(function* () {
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-  const introducerId = yield* currentIntroducer();
-  if (introducerId === undefined) return;
-  const result = yield* registry.run(introducerId, request(WS_METHODS.hubLinkTailnet, {}));
+  let result: HubLinkTailnetResult | undefined;
+  for (const id of yield* connectedIntroducers()) {
+    const answer = yield* registry
+      .run(id, request(WS_METHODS.hubLinkTailnet, {}))
+      .pipe(Effect.option);
+    if (Option.isSome(answer)) {
+      result = answer.value;
+      break;
+    }
+  }
   const saved = yield* savedRoutes();
+  if (result === undefined) {
+    // No connected machine runs Codr-Hub. Join Codr-Hub on a known tailnet machine; the
+    // next pass links the rest through it.
+    // ponytail: retries failed hosts every pass; remember misses if this gets noisy.
+    for (const origin of codrHubProbeOrigins(saved.map((route) => route.origin))) {
+      const joined = yield* joinTailnetHost(origin).pipe(Effect.option);
+      if (Option.isSome(joined)) return;
+    }
+    return;
+  }
   for (const link of result.links) {
     if (catalogDecision(saved, link) === "skip") continue;
     const connectionId = bearerConnectionId(link.environmentId, link.httpBaseUrl);
@@ -159,8 +199,8 @@ const linkTailnetMesh = Effect.fn("codrHub.linkTailnetMesh")(function* () {
         { concurrency: "unbounded" },
       );
     }),
-    Stream.mapEffect(() => currentIntroducer()),
-    Stream.filter((id): id is EnvironmentId => id !== undefined),
+    Stream.mapEffect(() => connectedIntroducers()),
+    Stream.filter((ids) => ids.length > 0),
     Stream.take(1),
     Stream.runHead,
   );

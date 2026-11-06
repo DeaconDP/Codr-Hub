@@ -4,7 +4,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import type { BearerConnectionRegistration } from "../connection/catalog.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
-import { catalogDecision, joinTailnetHost } from "./linkTailnetMesh.ts";
+import { catalogDecision, codrHubProbeOrigins, joinTailnetHost } from "./linkTailnetMesh.ts";
 
 const link = {
   environmentId: "env-1",
@@ -41,6 +41,21 @@ describe("catalogDecision", () => {
         link,
       ),
     ).toBe("save");
+  });
+});
+
+describe("codrHubProbeOrigins", () => {
+  it("tries Codr-Hub's port on saved tailnet machines that lack it", () => {
+    expect(
+      codrHubProbeOrigins([
+        "https://pc.tail1.ts.net",
+        "https://mac.tail1.ts.net",
+        "https://mac.tail1.ts.net:5733",
+        "https://PC.tail1.ts.net:3443",
+        "http://192.168.1.5:3773",
+        "not a url",
+      ]),
+    ).toEqual(["https://pc.tail1.ts.net:5733"]);
   });
 });
 

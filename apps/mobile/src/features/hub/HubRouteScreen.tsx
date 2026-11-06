@@ -70,42 +70,44 @@ export function HubRouteScreen() {
   return (
     <SettingsScreen title="Hub" workspaceRoot>
       {portfolio.connectedCount === 0 ? (
-        <EmptyState
-          variant="plain"
-          title="No environments connected"
-          detail="Connect a machine running Codr-Hub to see your projects."
-          actionLabel="Add environment"
-          onAction={() => navigation.navigate("ConnectionsNew")}
-        />
+        <HubScroll bottomInset={insets.bottom}>
+          <EmptyState
+            variant="plain"
+            title="No environments connected"
+            detail="Connect a machine running Codr-Hub to see your projects."
+            actionLabel="Add environment"
+            onAction={() => navigation.navigate("ConnectionsNew")}
+          />
+        </HubScroll>
       ) : !hasPortfolio && portfolio.error !== null && !portfolio.isPending ? (
-        <EmptyState
-          variant="plain"
-          title="Hub isn't available"
-          detail={`The connected environments need to run Codr-Hub. T3 Code servers don't include the Hub. ${portfolio.error}`}
-        />
+        <HubScroll bottomInset={insets.bottom}>
+          <EmptyState
+            variant="plain"
+            title="Hub isn't available"
+            detail={`None of your connected machines (${machines.map((machine) => machine.label).join(", ")}) runs Codr-Hub. T3 Code servers don't include the Hub, so add a connection to a machine running Codr-Hub.`}
+            actionLabel="Add environment"
+            onAction={() => navigation.navigate("ConnectionsNew")}
+          />
+        </HubScroll>
       ) : !hasPortfolio ? (
         <View className="flex-1 items-center justify-center" accessibilityLabel="Loading Hub">
           <AppActivityIndicator colorClassName="accent-icon-muted" />
         </View>
       ) : portfolio.projects.length === 0 ? (
-        <EmptyState
-          variant="plain"
-          title="No projects yet"
-          detail="Import your projects from Hub in the web app, or turn on Sync with T3 there."
-        />
+        <HubScroll bottomInset={insets.bottom}>
+          <EmptyState
+            variant="plain"
+            title="No projects yet"
+            detail="Import your projects from Hub in the web app, or turn on Sync with T3 there."
+          />
+        </HubScroll>
       ) : view === "pace" ? (
-        <ScrollView
-          contentInsetAdjustmentBehavior="automatic"
-          showsVerticalScrollIndicator={false}
-          className="flex-1"
-          contentContainerClassName="gap-5 px-5 pt-4"
-          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
-        >
+        <HubScroll bottomInset={insets.bottom}>
           <ViewPicker view={view} onSelect={setView} />
           {machines.map((machine) => (
             <HubMachinePace key={machine.environmentId} {...machine} />
           ))}
-        </ScrollView>
+        </HubScroll>
       ) : view === "activity" ? (
         <ActivityView
           portfolio={portfolio}
@@ -113,13 +115,7 @@ export function HubRouteScreen() {
           header={<ViewPicker view={view} onSelect={setView} />}
         />
       ) : (
-        <ScrollView
-          contentInsetAdjustmentBehavior="automatic"
-          showsVerticalScrollIndicator={false}
-          className="flex-1"
-          contentContainerClassName="gap-5 px-5 pt-4"
-          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
-        >
+        <HubScroll bottomInset={insets.bottom}>
           <ViewPicker view={view} onSelect={setView} />
           <ProjectList
             portfolio={portfolio}
@@ -127,9 +123,24 @@ export function HubRouteScreen() {
             sort={sort}
             onSort={setSort}
           />
-        </ScrollView>
+        </HubScroll>
       )}
     </SettingsScreen>
+  );
+}
+
+/** Inset-adjusted so content starts below the native large-title header. */
+function HubScroll(props: { bottomInset: number; children: ReactNode }) {
+  return (
+    <ScrollView
+      contentInsetAdjustmentBehavior="automatic"
+      showsVerticalScrollIndicator={false}
+      className="flex-1"
+      contentContainerClassName="gap-5 px-5 pt-4"
+      contentContainerStyle={{ paddingBottom: Math.max(props.bottomInset, 18) + 18 }}
+    >
+      {props.children}
+    </ScrollView>
   );
 }
 
