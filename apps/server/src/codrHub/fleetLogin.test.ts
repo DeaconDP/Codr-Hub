@@ -4,7 +4,7 @@ import {
   FLEET_LABEL,
   renderLaunchdPlist,
   renderSystemdUnit,
-  renderWindowsTaskCommand,
+  renderWindowsStartupScript,
 } from "./fleetLogin.ts";
 
 const plan = {
@@ -13,6 +13,12 @@ const plan = {
   repoRoot: "/work/Codr-Hub",
   logPath: "/work/Codr-Hub/.t3/userdata/codr-hub/fleet.log",
   runArgs: ["--run", "--home-dir", "/work/Fleet data & checks", "--port", "15123"],
+};
+
+/** The PowerShell a Startup `.cmd` runs, decoded from its `-EncodedCommand`. */
+const startupCommand = (script: string): string => {
+  const encoded = /-EncodedCommand (\S+)/.exec(script)?.[1] ?? "";
+  return Buffer.from(encoded, "base64").toString("utf16le");
 };
 
 describe("fleet login units", () => {
@@ -33,8 +39,8 @@ describe("fleet login units", () => {
     expect(unit).not.toContain("t3code.service");
     expect(unit).toContain('"--home-dir" "/work/Fleet data & checks" "--port" "15123"');
 
-    expect(renderWindowsTaskCommand(plan)).toContain(
-      '"--home-dir" "/work/Fleet data & checks" "--port" "15123"',
+    expect(startupCommand(renderWindowsStartupScript(plan))).toContain(
+      `'"/work/Codr-Hub/scripts/codr-hub-fleet/parent.ts" "--run" "--home-dir" "/work/Fleet data & checks" "--port" "15123"'`,
     );
   });
 
@@ -49,12 +55,16 @@ describe("fleet login units", () => {
     expect(unit).toContain('ExecStart="/work/Node tools/node"');
     expect(unit).toContain('"/work/$$data/100%%"');
 
-    const windows = renderWindowsTaskCommand({
-      ...plan,
-      nodePath: "C:\\Program Files\\nodejs\\node.exe",
-      runArgs: ["--run", "--home-dir", "C:\\Fleet data\\"],
-    });
-    expect(windows).toContain('"C:\\Program Files\\nodejs\\node.exe"');
+    const windows = startupCommand(
+      renderWindowsStartupScript({
+        ...plan,
+        nodePath: "C:\\Program Files\\nodejs\\node.exe",
+        repoRoot: "C:\\Dale's code\\Codr-Hub",
+        runArgs: ["--run", "--home-dir", "C:\\Fleet data\\"],
+      }),
+    );
+    expect(windows).toContain("-FilePath 'C:\\Program Files\\nodejs\\node.exe'");
+    expect(windows).toContain("-WorkingDirectory 'C:\\Dale''s code\\Codr-Hub'");
     expect(windows).toContain('"C:\\Fleet data\\\\"');
   });
 });

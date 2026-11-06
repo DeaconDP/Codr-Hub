@@ -40,7 +40,7 @@ Relative home paths resolve from the checkout root. The web port remains dev-run
 node scripts/codr-hub-fleet/parent.ts --arm --home-dir /path/to/fleet-data --port 15123
 ```
 
-Omit `--home-dir` and `--port` for the defaults. The login entry saves the resolved home and any explicit port. macOS uses launchd, Linux uses a systemd user service, and Windows uses a logon task. macOS and Linux start it immediately; Windows starts it at the next logon. Enabling login startup does not migrate existing data from another home.
+Omit `--home-dir` and `--port` for the defaults. The login entry saves the resolved home and any explicit port. macOS uses launchd, Linux uses a systemd user service, and Windows uses an entry in your Startup folder, so no admin rights are needed. All three start it immediately. Enabling login startup does not migrate existing data from another home.
 
 ## Resolve a blocked update
 

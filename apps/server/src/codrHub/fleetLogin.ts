@@ -79,6 +79,16 @@ WantedBy=default.target
 const windowsQuote = (value: string): string =>
   `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1")}"`;
 
-/** One logon task. `schtasks` restarts nothing on its own. The parent loop stays up. */
-export const renderWindowsTaskCommand = (plan: FleetLoginPlan): string =>
-  [plan.nodePath, plan.scriptPath, ...plan.runArgs].map(windowsQuote).join(" ");
+const powershellQuote = (value: string): string => `'${value.replaceAll("'", "''")}'`;
+
+/**
+ * A Startup-folder `.cmd`, which needs no admin rights (a logon task does). PowerShell starts the
+ * parent hidden; the encoded command sidesteps cmd quoting. Nothing restarts it; the loop stays up.
+ */
+export const renderWindowsStartupScript = (plan: FleetLoginPlan): string => {
+  const args = [plan.scriptPath, ...plan.runArgs].map(windowsQuote).join(" ");
+  const command = `Start-Process -WindowStyle Hidden -WorkingDirectory ${powershellQuote(plan.repoRoot)} -FilePath ${powershellQuote(plan.nodePath)} -ArgumentList ${powershellQuote(args)}`;
+  const encoded = Buffer.from(command, "utf16le").toString("base64");
+  return `@powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ${encoded}
+`;
+};

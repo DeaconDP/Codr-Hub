@@ -31,7 +31,7 @@ import {
   FLEET_TASK_NAME,
   renderLaunchdPlist,
   renderSystemdUnit,
-  renderWindowsTaskCommand,
+  renderWindowsStartupScript,
   type FleetLoginPlan,
 } from "../../apps/server/src/codrHub/fleetLogin.ts";
 
@@ -224,6 +224,16 @@ const claimParent = () => {
   NodeFS.writeFileSync(parentPidPath, `${process.pid}\n`);
 };
 
+const windowsStartupPath = NodePath.join(
+  process.env.APPDATA ?? NodePath.join(NodeOS.homedir(), "AppData", "Roaming"),
+  "Microsoft",
+  "Windows",
+  "Start Menu",
+  "Programs",
+  "Startup",
+  `${FLEET_TASK_NAME}.cmd`,
+);
+
 const plan = (): FleetLoginPlan => ({
   nodePath: process.execPath,
   scriptPath,
@@ -283,25 +293,22 @@ const arm = () => {
     console.log(`Fleet parent will start at login (${unitPath}).`);
     return;
   }
-  const created = NodeChildProcess.spawnSync(
-    "schtasks",
-    [
-      "/Create",
-      "/F",
-      "/SC",
-      "ONLOGON",
-      "/TN",
-      FLEET_TASK_NAME,
-      "/TR",
-      renderWindowsTaskCommand(unit),
-    ],
-    { encoding: "utf8" },
-  );
-  if (created.status !== 0) {
-    console.error(created.stderr || "schtasks failed");
-    process.exit(1);
-  }
-  console.log("Fleet parent will start at logon.");
+  // Older checkouts registered an admin-only logon task; the Startup entry replaces it.
+  NodeChildProcess.spawnSync("schtasks", ["/Delete", "/F", "/TN", FLEET_TASK_NAME], {
+    stdio: "ignore",
+  });
+  NodeFS.mkdirSync(NodePath.dirname(windowsStartupPath), { recursive: true });
+  NodeFS.writeFileSync(windowsStartupPath, renderWindowsStartupScript(unit));
+  // Start now as well, like launchd and systemd. A second parent exits on its own claim.
+  const log = NodeFS.openSync(logPath, "a");
+  NodeChildProcess.spawn(unit.nodePath, [unit.scriptPath, ...unit.runArgs], {
+    cwd: repoRoot,
+    detached: true,
+    stdio: ["ignore", log, log],
+    windowsHide: true,
+  }).unref();
+  NodeFS.closeSync(log);
+  console.log(`Fleet parent started, and will start at login (${windowsStartupPath}).`);
 };
 
 const disarm = () => {
@@ -335,6 +342,7 @@ const disarm = () => {
   NodeChildProcess.spawnSync("schtasks", ["/Delete", "/F", "/TN", FLEET_TASK_NAME], {
     stdio: "ignore",
   });
+  NodeFS.rmSync(windowsStartupPath, { force: true });
 };
 
 const run = async () => {
