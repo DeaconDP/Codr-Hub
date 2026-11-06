@@ -143,6 +143,11 @@ const stopPid = async (pid: number) => {
   const deadline = Date.now() + 8_000;
   while (alive(pid) && Date.now() < deadline) await sleep(200);
   if (alive(pid)) signal("SIGKILL");
+};
+
+const stopChild = async (record: ChildRecord) => {
+  if (record.metroPid !== undefined && alive(record.metroPid)) await stopPid(record.metroPid);
+  await stopPid(record.pid);
   writeChild(null);
 };
 
@@ -167,7 +172,37 @@ const vpCommand = () => {
   return null;
 };
 
-const startChild = (sha: string) => {
+/** Metro restarts with the server, so the phone's bundle always matches the server's commit. */
+const startMetro = (sha: string, env: NodeJS.ProcessEnv): number | undefined => {
+  const log = NodeFS.openSync(logPath, "a");
+  const metro = NodeChildProcess.spawn(
+    process.execPath,
+    [
+      NodePath.join(repoRoot, "apps", "mobile", "node_modules", "expo", "bin", "cli"),
+      "start",
+      "--dev-client",
+      "--scheme",
+      "codrhub-dev",
+      "--lan",
+      // EXPO_PUBLIC_ values are inlined at transform time, so a cached bundle would keep the old build.
+      "--clear",
+    ],
+    {
+      cwd: NodePath.join(repoRoot, "apps", "mobile"),
+      detached: true,
+      stdio: ["ignore", log, log],
+      env: { ...env, APP_VARIANT: "development", EXPO_PUBLIC_CODR_BUILD: sha },
+    },
+  );
+  NodeFS.closeSync(log);
+  metro.unref();
+  return metro.pid;
+};
+
+const startChild = async (sha: string) => {
+  // A server that exited on its own can leave its Metro holding the port.
+  const stale = readChild();
+  if (stale?.metroPid !== undefined && alive(stale.metroPid)) await stopPid(stale.metroPid);
   NodeFS.mkdirSync(stateDir, { recursive: true });
   const log = NodeFS.openSync(logPath, "a");
   const env = childEnv(process.env, repoRoot, process.execPath);
@@ -185,7 +220,8 @@ const startChild = (sha: string) => {
   NodeFS.closeSync(log);
   child.unref();
   if (child.pid === undefined) return;
-  writeChild({ pid: child.pid, sha, startedAt });
+  const metroPid = options.mobile ? startMetro(sha, env) : undefined;
+  writeChild({ pid: child.pid, sha, startedAt, ...(metroPid === undefined ? {} : { metroPid }) });
 };
 
 const installDependencies = async (): Promise<boolean> => {
@@ -363,7 +399,7 @@ const run = async () => {
       lastFetchAt = Date.now();
     } else if (decision.action._tag === "Stop" && child._tag === "Owned") {
       const recorded = readChild();
-      if (recorded) await stopPid(recorded.pid);
+      if (recorded) await stopChild(recorded);
     } else if (decision.action._tag === "FastForward") {
       const moved = await fastForward(repoRoot, decision.action.sha);
       if (moved && process.env.CODR_HUB_FLEET_SUPERVISED === "1") {
@@ -382,7 +418,7 @@ const run = async () => {
         );
       }
     } else if (decision.action._tag === "Start") {
-      startChild(inspection.headSha ?? "");
+      await startChild(inspection.headSha ?? "");
     }
     await sleep(TICK_MS);
   }
@@ -392,11 +428,12 @@ if (options.command === "arm") arm();
 else if (options.command === "disarm") disarm();
 else if (options.command === "help") {
   console.log(
-    "node scripts/codr-hub-fleet/parent.ts [--arm | --disarm | --run] [--home-dir <directory>] [--port <port>]",
+    "node scripts/codr-hub-fleet/parent.ts [--arm | --disarm | --run] [--home-dir <directory>] [--port <port>] [--mobile]",
   );
   console.log(
     "The data directory defaults to this checkout's .t3. Dev ports are selected by dev-runner.",
   );
+  console.log("--mobile also runs Metro for the phone dev client, restarted with every update.");
 } else if (options.command === "run") {
   await run();
 }

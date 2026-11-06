@@ -42,6 +42,16 @@ node scripts/codr-hub-fleet/parent.ts --arm --home-dir /path/to/fleet-data --por
 
 Omit `--home-dir` and `--port` for the defaults. The login entry saves the resolved home and any explicit port. macOS uses launchd, Linux uses a systemd user service, and Windows uses an entry in your Startup folder, so no admin rights are needed. All three start it immediately. Enabling login startup does not migrate existing data from another home.
 
+## Phone testing
+
+On the machine the Codr-Hub Dev phone app loads from (the Mac), add `--mobile` when enabling login startup:
+
+```sh
+node scripts/codr-hub-fleet/parent.ts --arm --mobile
+```
+
+The parent then runs Metro beside the server and restarts both on every update, so the phone never loads an old bundle. The Hub screen on the phone shows `App <sha> · server <sha>`. When the server is ahead, tap that line to reload. A change to native code still needs `vp run mobile:install ios`. If Metro exits on its own, it comes back with the next update or parent restart.
+
 ## Resolve a blocked update
 
 Hub reports the reason when an update waits or gets stuck. A dirty, ahead, or diverged checkout stays unchanged. Resolve that Git state yourself. A server with no fresh activity report stays running until reporting recovers or it exits. If an untracked server uses the same data directory, stop it through its original launcher before letting the parent start its replacement.

@@ -21,6 +21,7 @@ import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScroll
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { cn } from "../../lib/cn";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
+import { HubBuildStamp } from "./HubBuildStamp";
 import { hubProjectMenuActions, hubProjectPatchForAction } from "./hubProjectMenu";
 import { HubOverviewView } from "./HubOverviewView";
 import { HubMachinePace } from "./HubPaceView";
@@ -136,12 +137,15 @@ function HubScroll(props: { bottomInset: number; children: ReactNode }) {
 
 function ViewPicker(props: { view: HubView; onSelect: (view: HubView) => void }) {
   return (
-    <SegmentedControl
-      options={VIEW_OPTIONS}
-      selected={props.view}
-      onSelect={props.onSelect}
-      role="tab"
-    />
+    <View className="gap-2">
+      <SegmentedControl
+        options={VIEW_OPTIONS}
+        selected={props.view}
+        onSelect={props.onSelect}
+        role="tab"
+      />
+      <HubBuildStamp />
+    </View>
   );
 }
 

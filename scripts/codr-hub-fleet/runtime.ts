@@ -10,6 +10,8 @@ export type ChildRecord = {
   readonly pid: number;
   readonly sha: string;
   readonly startedAt: number;
+  /** Metro for the phone dev client, started with `--mobile`. */
+  readonly metroPid?: number;
 };
 
 export function fleetOptions(args: readonly string[], repoRoot: string) {
@@ -22,6 +24,7 @@ export function fleetOptions(args: readonly string[], repoRoot: string) {
       help: { type: "boolean" },
       "home-dir": { type: "string" },
       port: { type: "string" },
+      mobile: { type: "boolean" },
     },
   });
   const commands = ["arm", "disarm", "run", "help"] as const;
@@ -49,7 +52,8 @@ export function fleetOptions(args: readonly string[], repoRoot: string) {
     hubDir: NodePath.join(stateDir, "codr-hub"),
     runtimePath: NodePath.join(stateDir, "server-runtime.json"),
     serverArgs,
-    runArgs: ["--run", ...serverArgs],
+    mobile: values.mobile === true,
+    runArgs: ["--run", ...serverArgs, ...(values.mobile ? ["--mobile"] : [])],
   };
 }
 
@@ -88,7 +92,19 @@ export function readChildRecord(value: unknown): ChildRecord | null {
     !Number.isFinite(value.startedAt)
   )
     return null;
-  return { pid: value.pid, sha: value.sha, startedAt: value.startedAt };
+  const metroPid =
+    "metroPid" in value &&
+    typeof value.metroPid === "number" &&
+    Number.isInteger(value.metroPid) &&
+    value.metroPid > 0
+      ? value.metroPid
+      : undefined;
+  return {
+    pid: value.pid,
+    sha: value.sha,
+    startedAt: value.startedAt,
+    ...(metroPid === undefined ? {} : { metroPid }),
+  };
 }
 
 function readRuntime(value: unknown) {

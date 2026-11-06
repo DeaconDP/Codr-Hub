@@ -73,6 +73,8 @@ describe("fleet runtime configuration", () => {
         "15123",
       ]);
       expect(options.runArgs).toEqual(["--run", ...options.serverArgs]);
+      // The login entry must keep running Metro after a reboot.
+      expect(fleetOptions(["--arm", "--mobile"], "/work").runArgs).toContain("--mobile");
     }).pipe(Effect.provide(Path.layer)),
   );
 
@@ -85,6 +87,8 @@ describe("fleet runtime configuration", () => {
     expect(() => fleetOptions(["--home-dir", " "], "/work")).toThrow("--home-dir");
     expect(readChildRecord({ ...child, pid: -1 })).toBeNull();
     expect(readChildRecord({ ...child, startedAt: Number.NaN })).toBeNull();
+    expect(readChildRecord({ ...child, metroPid: 300 })).toEqual({ ...child, metroPid: 300 });
+    expect(readChildRecord({ ...child, metroPid: -1 })).toEqual(child);
   });
 });
 

@@ -33,6 +33,9 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 
 ## Human testing (owner)
 
+- [x] Fleet `--mobile` runs Metro with the server and restarts it on every update; the phone Hub shows the app and server commit and reloads when stale
+- [ ] Owner: on the Mac, re-arm with `node scripts/codr-hub-fleet/parent.ts --arm --mobile` and stop any hand-started `dev:client`
+
 - [ ] Start dev on Steve and open Hub from the sidebar (desktop and phone over Tailscale with `--share`)
 - [ ] Import from Deez-PM, then fix the "Path missing" checkouts for the projects you care about
 - [ ] Add 2–3 strategy priorities, link projects, and check the ranking feels right

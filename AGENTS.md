@@ -217,4 +217,5 @@ This repository is Codr-Hub, a soft fork of T3 Code. Read `docs/codr-hub/BRIEF.m
 
 - `ROADMAP.md` (epics, plus a `## Deferred` log with date, reason and `file:line`) and `TODO.md` (active tasks) are kept in the repo. Read both before proposing next steps, and keep them current.
 - Motion follows `docs/codr-hub/MOTION.md`: continuous animation only on live agent work, never on idle chrome.
+- "Ready to test" means the owner sees it on the phone without doing anything. Before saying it, push to `origin`, then confirm on the Mac (MacBook Pro environment) that `<checkout>/.t3/userdata/codr-hub/fleet.json` reports phase `current` at your commit. Give the short SHA: the phone's Hub shows `App <sha> · server <sha>`. If the change needs a new native build, say so and run `vp run mobile:install ios` there; Metro cannot deliver it.
 - New Codr-Hub code goes in its own modules. Upstream files get hook-in lines only, and each one is listed in the fork-seams table in `docs/codr-hub/ARCHITECTURE.md`.
