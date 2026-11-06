@@ -1,5 +1,6 @@
-import { WS_METHODS, type EnvironmentId, type HubLinkTailnetResult } from "@t3tools/contracts";
+import { WS_METHODS, type EnvironmentId } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
+import * as Exit from "effect/Exit";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -135,20 +136,30 @@ const savedRoutes = Effect.fn("codrHub.linkTailnetMesh.savedRoutes")(function* (
   return saved;
 });
 
+/**
+ * The first introducer that answers. A stock T3 server rejects the unknown method as a
+ * defect, not a failure, so any cause counts as no answer.
+ */
+export const firstIntroducerAnswer = Effect.fn("codrHub.linkTailnetMesh.firstAnswer")(function* <
+  Id,
+  A,
+  E,
+  R,
+>(ids: readonly Id[], ask: (id: Id) => Effect.Effect<A, E, R>) {
+  for (const id of ids) {
+    const exit = yield* Effect.exit(ask(id));
+    if (Exit.isSuccess(exit)) return Option.some(exit.value);
+  }
+  return Option.none<A>();
+});
+
 const linkOnce = Effect.fn("codrHub.linkTailnetMesh.once")(function* () {
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-  let result: HubLinkTailnetResult | undefined;
-  for (const id of yield* connectedIntroducers()) {
-    const answer = yield* registry
-      .run(id, request(WS_METHODS.hubLinkTailnet, {}))
-      .pipe(Effect.option);
-    if (Option.isSome(answer)) {
-      result = answer.value;
-      break;
-    }
-  }
+  const answer = yield* firstIntroducerAnswer(yield* connectedIntroducers(), (id) =>
+    registry.run(id, request(WS_METHODS.hubLinkTailnet, {})),
+  );
   const saved = yield* savedRoutes();
-  if (result === undefined) {
+  if (Option.isNone(answer)) {
     // No connected machine runs Codr-Hub. Join Codr-Hub on a known tailnet machine; the
     // next pass links the rest through it.
     // ponytail: retries failed hosts every pass; remember misses if this gets noisy.
@@ -158,7 +169,7 @@ const linkOnce = Effect.fn("codrHub.linkTailnetMesh.once")(function* () {
     }
     return;
   }
-  for (const link of result.links) {
+  for (const link of answer.value.links) {
     if (catalogDecision(saved, link) === "skip") continue;
     const connectionId = bearerConnectionId(link.environmentId, link.httpBaseUrl);
     yield* registry

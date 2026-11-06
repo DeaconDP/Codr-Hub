@@ -1,10 +1,16 @@
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import { FetchHttpClient } from "effect/http";
 import { describe, expect, it } from "@effect/vitest";
 
 import type { BearerConnectionRegistration } from "../connection/catalog.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
-import { catalogDecision, codrHubProbeOrigins, joinTailnetHost } from "./linkTailnetMesh.ts";
+import {
+  catalogDecision,
+  codrHubProbeOrigins,
+  firstIntroducerAnswer,
+  joinTailnetHost,
+} from "./linkTailnetMesh.ts";
 
 const link = {
   environmentId: "env-1",
@@ -57,6 +63,25 @@ describe("codrHubProbeOrigins", () => {
       ]),
     ).toEqual(["https://pc.tail1.ts.net:5733"]);
   });
+});
+
+describe("firstIntroducerAnswer", () => {
+  const ask = (id: string) =>
+    id === "stock"
+      ? Effect.die(new Error("Unknown request tag: hub.linkTailnet"))
+      : Effect.succeed(id);
+
+  it.effect("skips a stock T3 machine and asks the next one", () =>
+    Effect.gen(function* () {
+      expect(yield* firstIntroducerAnswer(["stock", "hub"], ask)).toEqual(Option.some("hub"));
+    }),
+  );
+
+  it.effect("returns none when only stock T3 machines are connected", () =>
+    Effect.gen(function* () {
+      expect(yield* firstIntroducerAnswer(["stock"], ask)).toEqual(Option.none());
+    }),
+  );
 });
 
 describe("joinTailnetHost", () => {
