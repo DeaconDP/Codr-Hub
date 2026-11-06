@@ -21,6 +21,9 @@ const nodes = new Map([
   [steve, "Steve"],
   [ada, "Ada"],
 ]);
+// Steve's Hub reads projects from the stock T3 beside it.
+const stockT3 = "env-steve-t3" as EnvironmentId;
+const nodesWithT3 = new Map([...nodes, [stockT3, "Steve"]]);
 
 const group = (name: string, members: ReadonlyArray<[EnvironmentId, string]>) => ({
   projectKey: `key-${name}`,
@@ -103,6 +106,10 @@ describe("t3ProjectForHubView", () => {
     ]);
     expect(t3ProjectForHubView(view, projects, nodes)).toBe(projects[1]);
     expect(t3ProjectForHubView(hub("none", {}, [["Ada", null]]), projects, nodes)).toBeNull();
+    const withStock = [...projects, { environmentId: stockT3, workspaceRoot: "/home/d/web" }];
+    expect(
+      t3ProjectForHubView(hub("web", {}, [["Steve", "/home/d/web"]]), withStock, nodesWithT3),
+    ).toBe(withStock[2]);
   });
 
   it("offers to add an unmatched folder on a connected machine, else names the offline ones", () => {
@@ -221,6 +228,23 @@ describe("pickerWriteFor", () => {
       environmentId: steve,
       input: { id: "web", tags: ["x"] },
     });
+  });
+
+  it("writes a stock T3 project through the Hub server on the same node", () => {
+    const [unlinked] = linkPickerRows([group("Web", [[stockT3, "/w"]])], [], nodesWithT3);
+    expect(pickerWriteFor(unlinked!, { favorite: true }, nodesWithT3, stockT3)).toEqual({
+      environmentId: steve,
+      input: { name: "Web", localPath: "/w", favorite: true },
+    });
+    const [linked] = linkPickerRows(
+      [group("Web", [[stockT3, "/w"]])],
+      [hub("web", {}, [["Steve", "/w"]])],
+      nodesWithT3,
+    );
+    expect(linked!.hub?.project.id).toBe("web");
+    expect(pickerWriteFor(linked!, { tags: ["x"] }, nodesWithT3, stockT3)?.environmentId).toBe(
+      steve,
+    );
   });
 
   it("returns null without a Hub on any member's node", () => {

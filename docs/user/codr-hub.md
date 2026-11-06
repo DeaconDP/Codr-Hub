@@ -35,6 +35,19 @@ To skip re-running the import, turn on **Sync with T3** in Hub settings. It is s
 
 Turn it on, or run the import, on each machine from the selector at the top.
 
+### Using the T3 Code app beside the Hub
+
+If you keep your projects in the T3 Code app and run Codr-Hub beside it, link the Hub server to that app so the Hub reads the app's projects instead of its own:
+
+1. Turn on **Linked environments** in **Settings → Labs**, in both the T3 Code app and the Hub server.
+2. In the T3 Code app, create a pairing code in **Settings → Sharing & access**. Read-only access is enough.
+3. In the Hub server, open **Settings → Environments → Linked environments**, choose **Link**, enter the app's address (`http://localhost:3773`) and the pairing code.
+4. Turn on **Sync with T3** in Hub settings. **T3 source** set to **Auto** picks the app up when it is the only linked environment on this machine; otherwise choose it there.
+
+The Hub then only reads the app: it never adds projects to it. It checks for new projects every two minutes. A checkout moves to the folder the app has open, unless the app has both folders open. If the app can't be reached, the line above the list says so and your projects stay as they are. Links last 30 days; link again with a new code to renew.
+
+To start threads from the Hub in the app's projects, connect your phone or browser to the T3 Code app as well as to the Hub server.
+
 ## Choosing a project for a new thread
 
 The project menu on a new thread lists **Favourites** first, then your other projects in the order you arrange. Drag a row by its handle to move it, or highlight it and press Alt+↑/↓. Type to find a project by name or tag, or tap a tag to show only those projects.

@@ -1,6 +1,7 @@
 /**
  * Keeps this node's T3 projects and the portfolio in step, and never deletes on either side.
- * `mergeT3Import` links T3 projects by repository, then name, without overwriting owner edits;
+ * `mergeT3Import` links T3 projects by repository, then name, without overwriting owner edits,
+ * and moves a checkout to the folder T3 has open;
  * `planT3Creates` lists this node's portfolio checkouts that T3 has no project for.
  */
 import type { HubProject, OrchestrationProjectShell } from "@t3tools/contracts";
@@ -48,8 +49,16 @@ export function mergeT3Import(
   let updated = 0;
   let skipped = 0;
 
-  const usableHere = (project: HubProject) =>
-    project.hosts[context.nodeName] !== undefined && !context.missingPathIds.has(project.id);
+  const t3Roots = new Set(t3Projects.map((project) => pathKey(project.workspaceRoot)));
+  // A live checkout T3 also has open stays; one T3 does not have open moves to T3's folder.
+  const keepsCheckout = (project: HubProject) => {
+    const host = project.hosts[context.nodeName];
+    return (
+      host !== undefined &&
+      !context.missingPathIds.has(project.id) &&
+      t3Roots.has(pathKey(host.path))
+    );
+  };
   // The stored path itself counts even when missing: T3 and the Hub agree on it.
   const linkedPaths = new Set(
     existing.flatMap((project) => {
@@ -86,7 +95,7 @@ export function mergeT3Import(
       continue;
     }
     // A second checkout of a project that already has one here is not a new project.
-    if (usableHere(match) || upserts.has(match.id)) {
+    if (keepsCheckout(match) || upserts.has(match.id)) {
       skipped += 1;
       continue;
     }

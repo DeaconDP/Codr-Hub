@@ -15,7 +15,11 @@ export type HubMergedProjectsLive = {
   readonly projects: ReadonlyArray<HubMergedProjectView>;
   /** First successful snapshot, for strategy labels if the chosen env is down. */
   readonly anySnapshot: HubSnapshot | null;
-  /** Hub node name each answering environment reports, for linking T3 projects by path. */
+  /**
+   * Hub node name each answering environment reports, then each node's linked stock T3
+   * (`t3Sync.t3EnvironmentId`), for linking T3 projects by path. Hub environments come first,
+   * so the first id per node name is the one that answers Hub writes.
+   */
   readonly nodeNameByEnvironmentId: ReadonlyMap<EnvironmentId, string>;
   /** First failure. Others may still have answered — this is not fatal. */
   readonly error: string | null;
@@ -88,6 +92,12 @@ export function createHubMergedProjectsAtomFamily(
         isPending ||= result.waiting;
         if (result._tag === "Failure" && error === null) {
           error = formatMergeError(result.cause);
+        }
+      }
+      for (const value of snapshots) {
+        const t3EnvironmentId = value.t3Sync?.t3EnvironmentId;
+        if (t3EnvironmentId != null && !nodeNameByEnvironmentId.has(t3EnvironmentId)) {
+          nodeNameByEnvironmentId.set(t3EnvironmentId, value.nodeName);
         }
       }
       return {

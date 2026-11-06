@@ -79,6 +79,8 @@ Codr-Hub manages the lifecycle around the work T3 does: scope, plan, organise, t
 
 ## Deferred
 
+- 2026-11-06: The native mobile Hub has no Sync with T3 switch or **T3 source** select; set both in the web Hub settings. Linking the Hub server to the T3 Code app is also a web Settings step. `apps/mobile/src/features/hub/HubRouteScreen.tsx:85`
+
 - 2026-11-05: The Stages board has no vertical drag. Rank comes from strategy, then priority, then favourites; manual order only breaks ties, so a dropped card would snap back. Reorder by changing a project's strategy or priority. `packages/client-runtime/src/codrHub/stageBoardModel.ts`
 
 - 2026-11-02: The new boot screen covers web and desktop only. The desktop "Connecting to WSL" splash keeps its spinner, and the mobile native splash stays a static image because native splash screens cannot animate. Its progress bar is indeterminate, because the browser exposes no total for module loading and a made-up percentage would lie. `apps/desktop/src/window/DesktopWindow.ts:177`

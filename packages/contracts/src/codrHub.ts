@@ -321,11 +321,21 @@ export const HubT3SyncResult = Schema.Struct({
 });
 export type HubT3SyncResult = typeof HubT3SyncResult.Type;
 
+/**
+ * Where Sync with T3 reads projects: "auto" (the one linked environment on this machine, else
+ * this server), "local" (this server), or a linked environment's id.
+ */
+export const HubT3Source = Schema.Union([Schema.Literals(["auto", "local"]), EnvironmentId]);
+export type HubT3Source = typeof HubT3Source.Type;
+
 export const HubT3SyncStatus = Schema.Struct({
   enabled: Schema.Boolean,
   lastSyncAt: Schema.NullOr(IsoDateTime),
   lastResult: Schema.NullOr(HubT3SyncResult),
   lastError: Schema.NullOr(Schema.String),
+  source: Schema.optional(HubT3Source),
+  /** The linked T3 environment the last sync read, or null when it read this server. */
+  t3EnvironmentId: Schema.optional(Schema.NullOr(EnvironmentId)),
 });
 export type HubT3SyncStatus = typeof HubT3SyncStatus.Type;
 
@@ -565,6 +575,7 @@ export const HubSetNodeInput = Schema.Struct({
   autopilotEnabled: Schema.optional(Schema.Boolean),
   /** Keep this node's T3 projects and Hub checkouts in step automatically. */
   syncT3: Schema.optional(Schema.Boolean),
+  t3Source: Schema.optional(HubT3Source),
 });
 export type HubSetNodeInput = typeof HubSetNodeInput.Type;
 

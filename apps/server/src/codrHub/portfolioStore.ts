@@ -14,6 +14,7 @@ import {
   HubProject,
   HubSettings,
   HubStrategyPriority,
+  HubT3Source,
   HubTask,
   TestHandoff,
 } from "@t3tools/contracts";
@@ -46,6 +47,8 @@ export const NodeFile = Schema.Struct({
   autopilotEnabled: Schema.Boolean,
   /** Sync with T3; absent in files written before the setting existed. */
   syncT3: Schema.optional(Schema.Boolean),
+  /** Absent means "auto". */
+  t3Source: Schema.optional(HubT3Source),
   ledger: Schema.Array(NodeLaunchRecord),
 });
 export type NodeFile = typeof NodeFile.Type;

@@ -4,14 +4,17 @@ import {
   type EnvironmentId,
   type HubSdlcStage,
   type HubSnapshot,
+  type HubT3Source,
 } from "@t3tools/contracts";
 import { useId, useState } from "react";
 
+import { useLinkedEnvironments } from "../../state/peerLinks";
 import { serverEnvironment } from "../../state/server";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -42,6 +45,16 @@ export function HubSettingsPanel(props: {
     "Could not change Sync with T3",
   );
   const [remote, setRemote] = useState(sync.remote ?? "");
+  const linked = useLinkedEnvironments(environmentId);
+  const t3Source: HubT3Source = snapshot.t3Sync?.source ?? "auto";
+  const t3Sources: Array<{ readonly value: HubT3Source; readonly label: string }> = [
+    { value: "auto", label: "Auto" },
+    { value: "local", label: "This server" },
+    ...[...linked].map(([value, label]) => ({ value, label })),
+  ];
+  if (!t3Sources.some((option) => option.value === t3Source)) {
+    t3Sources.push({ value: t3Source, label: t3Source });
+  }
 
   /** Commits a numeric field on blur when it is a valid, changed value. */
   const commitNumber = (
@@ -236,6 +249,37 @@ export function HubSettingsPanel(props: {
           </span>
         </span>
       </label>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium" id={`${id}-t3-source`}>
+          T3 source
+        </span>
+        <div className="w-56 max-w-full">
+          <Select<HubT3Source>
+            value={t3Source}
+            onValueChange={(next) => {
+              if (next !== null && next !== t3Source) void setSyncT3.run({ t3Source: next });
+            }}
+          >
+            <SelectTrigger aria-labelledby={`${id}-t3-source`}>
+              <SelectValue>
+                {t3Sources.find((option) => option.value === t3Source)?.label}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              {t3Sources.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Where Sync with T3 reads projects. Auto uses the one linked environment on this machine,
+          such as the T3 Code app beside this server, else this server. A linked T3 is only read:
+          the Hub never adds projects to it.
+        </p>
+      </div>
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={`${id}-remote`}>Portfolio git remote</Label>

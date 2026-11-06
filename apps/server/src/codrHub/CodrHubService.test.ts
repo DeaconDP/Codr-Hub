@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -12,15 +13,20 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import type {
-  ApplicationStoredEvent,
-  OrchestrationProjectShell,
-  Project,
+import {
+  type ApplicationStoredEvent,
+  EnvironmentId,
+  type OrchestrationProjectShell,
+  OrchestratorMcpFailure,
+  type PeerLinkSummary,
+  type Project,
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as PeerLinks from "../peer/PeerLinks.ts";
+import * as PeerMcpClient from "../peer/PeerMcpClient.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -36,6 +42,10 @@ const serviceLayer = (
   baseDir: string,
   projects: Partial<ProjectService.ProjectService["Service"]> = {},
   applicationEvents: Stream.Stream<ApplicationStoredEvent> = Stream.never,
+  peer: {
+    readonly links?: ReadonlyArray<PeerLinkSummary>;
+    readonly call?: PeerMcpClient.PeerMcpClient["Service"]["call"];
+  } = {},
 ) =>
   Hub.layer.pipe(
     Layer.provide(
@@ -56,6 +66,8 @@ const serviceLayer = (
             }),
         }),
         Layer.mock(Scheduler.Scheduler)({ register: () => Effect.void }),
+        Layer.mock(PeerLinks.PeerLinks)({ list: Effect.succeed(peer.links ?? []) }),
+        Layer.mock(PeerMcpClient.PeerMcpClient)(peer.call ? { call: peer.call } : {}),
         Layer.mock(OrchestrationEventStore.OrchestrationEventStore)({
           latestApplicationSequence: Effect.succeed(0),
           streamProjectedApplicationEvents: ({ project }) =>
@@ -318,6 +330,95 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
           "hub-only",
         ]);
       }).pipe(Effect.provide(serviceLayer(baseDir, projects, Stream.fromQueue(events))));
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
+  it.effect("reads a linked T3 on this machine without writing to it", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { baseDir, paths } = yield* fixture;
+      const checkout = path.join(baseDir, "hub-only");
+      yield* fs.makeDirectory(checkout, { recursive: true });
+      const stockT3 = EnvironmentId.make("stock-t3");
+      const at = DateTime.makeUnsafe("2026-11-01T00:00:00.000Z");
+      const link = (environmentId: EnvironmentId, url: string): PeerLinkSummary => ({
+        environmentId,
+        label: environmentId,
+        urls: [url],
+        access: "read-only",
+        linkedAt: at,
+        expiresAt: at,
+        lastReachedAt: null,
+        lastError: null,
+        status: "reachable",
+      });
+      const project = (title: string, workspaceRoot: string) => ({
+        title,
+        workspaceRoot,
+        repositoryIdentity: null,
+      });
+      const pages = [
+        { projects: [project("Alpha", "/work/alpha")], nextCursor: 1 },
+        { projects: [project("Beta", "/work/beta")], nextCursor: null },
+      ];
+      let reachable = true;
+      const tools: string[] = [];
+      const call: PeerMcpClient.PeerMcpClient["Service"]["call"] = (input) => {
+        tools.push(`${input.environmentId} ${input.tool} ${String(input.arguments.cursor)}`);
+        return reachable
+          ? Effect.succeed(pages[input.arguments.cursor as number] as never)
+          : Effect.fail(
+              new OrchestratorMcpFailure({
+                code: "orchestration_error",
+                message: "The linked environment stopped answering.",
+              }),
+            );
+      };
+      const projects: Partial<ProjectService.ProjectService["Service"]> = {
+        listShells: () => Effect.die("read the local T3 instead of the linked one"),
+        getByWorkspaceRoot: () => Effect.succeedNone,
+        create: () => Effect.die("created a project in the linked T3's place"),
+      };
+      yield* Effect.gen(function* () {
+        const hub = yield* Hub.CodrHubService;
+        yield* hub.upsertProject({ name: "Hub Only", localPath: checkout });
+        yield* hub.setNode({ syncT3: true });
+        const synced = yield* hub.subscribe().pipe(
+          Stream.filter((next) => next.t3Sync?.lastResult != null),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
+        expect(synced.t3Sync).toMatchObject({
+          source: "auto",
+          t3EnvironmentId: stockT3,
+          lastError: null,
+          lastResult: { imported: 2, updated: 0, skipped: 0, created: 0 },
+        });
+        expect(tools).toEqual(["stock-t3 t3_project_list 0", "stock-t3 t3_project_list 1"]);
+
+        reachable = false;
+        const before = yield* Store.readProjects(paths);
+        const failure = yield* hub.importProjects({ source: "t3" }).pipe(Effect.flip);
+        const message =
+          "Could not reach this machine's T3 (The linked environment stopped answering.)";
+        expect(failure.message).toBe(message);
+        expect((yield* snapshot(hub)).t3Sync).toMatchObject({
+          lastError: message,
+          lastResult: synced.t3Sync?.lastResult,
+        });
+        expect(yield* Store.readProjects(paths)).toEqual(before);
+      }).pipe(
+        Effect.provide(
+          serviceLayer(baseDir, projects, Stream.never, {
+            links: [
+              link(stockT3, "http://127.0.0.1:3773"),
+              link(EnvironmentId.make("vps"), "https://vps.example.ts.net"),
+            ],
+            call,
+          }),
+        ),
+      );
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 

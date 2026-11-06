@@ -158,11 +158,28 @@ export interface PickerWrite {
   readonly input: HubUpsertProjectInput;
 }
 
+/**
+ * The environments that answer Hub writes: the first per node name. Later ones are a node's
+ * linked stock T3 (see hubMerge), where threads should go.
+ */
+function hubEnvironments(
+  nodeNameByEnvironmentId: ReadonlyMap<EnvironmentId, string>,
+): Set<EnvironmentId> {
+  const seen = new Set<string>();
+  const hubs = new Set<EnvironmentId>();
+  for (const [id, nodeName] of nodeNameByEnvironmentId) {
+    if (seen.has(nodeName)) continue;
+    seen.add(nodeName);
+    hubs.add(id);
+  }
+  return hubs;
+}
+
 function byPrimaryFirst(
   nodeNameByEnvironmentId: ReadonlyMap<EnvironmentId, string>,
   primaryEnvironmentId: EnvironmentId | null,
 ): EnvironmentId[] {
-  return [...nodeNameByEnvironmentId.keys()].sort(
+  return [...hubEnvironments(nodeNameByEnvironmentId)].sort(
     (a, b) => Number(b === primaryEnvironmentId) - Number(a === primaryEnvironmentId),
   );
 }
@@ -194,12 +211,13 @@ export function t3ProjectForHubView<
       node.localPath === null ? [] : [linkKey(node.nodeName, node.localPath)],
     ),
   );
-  return (
-    projects.find((project) => {
-      const nodeName = nodeNameByEnvironmentId.get(project.environmentId);
-      return nodeName !== undefined && checkouts.has(linkKey(nodeName, project.workspaceRoot));
-    }) ?? null
-  );
+  const matches = projects.filter((project) => {
+    const nodeName = nodeNameByEnvironmentId.get(project.environmentId);
+    return nodeName !== undefined && checkouts.has(linkKey(nodeName, project.workspaceRoot));
+  });
+  if (matches.length < 2) return matches[0] ?? null;
+  const hubs = hubEnvironments(nodeNameByEnvironmentId);
+  return matches.find((project) => !hubs.has(project.environmentId)) ?? matches[0]!;
 }
 
 export type HubThreadTarget<P> =
@@ -227,7 +245,12 @@ export function hubThreadTarget<
   const project = t3ProjectForHubView(view, projects, nodeNameByEnvironmentId);
   if (project) return { kind: "open", project };
   const checkouts = view.nodes.filter((node) => node.localPath !== null && node.pathExists);
-  for (const [environmentId, nodeName] of nodeNameByEnvironmentId) {
+  const hubs = hubEnvironments(nodeNameByEnvironmentId);
+  // A node's linked stock T3 first: threads go where the owner works.
+  const environments = [...nodeNameByEnvironmentId].sort(
+    ([a], [b]) => Number(hubs.has(a)) - Number(hubs.has(b)),
+  );
+  for (const [environmentId, nodeName] of environments) {
     const node = checkouts.find((checkout) => checkout.nodeName === nodeName);
     if (node) return { kind: "add", environmentId, nodeName, workspaceRoot: node.localPath! };
   }
@@ -258,8 +281,9 @@ export function pickerWriteFor(
   }
   const environmentIds = byPrimaryFirst(nodeNameByEnvironmentId, primaryEnvironmentId);
   for (const environmentId of environmentIds) {
+    const nodeName = nodeNameByEnvironmentId.get(environmentId);
     const member = row.group.memberProjects.find(
-      (project) => project.environmentId === environmentId,
+      (project) => nodeNameByEnvironmentId.get(project.environmentId) === nodeName,
     );
     if (member) {
       return {

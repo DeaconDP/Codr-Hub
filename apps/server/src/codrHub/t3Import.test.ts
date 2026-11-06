@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
+import { EnvironmentId } from "@t3tools/contracts";
 
 import { mapDeezProject } from "./deezImport.ts";
 import { mergeT3Import, planT3Creates, repoKey, type T3ProjectInput } from "./t3Import.ts";
+import { pickT3Source } from "./t3Source.ts";
 
 const context = {
   nodeName: "Steve",
@@ -93,6 +95,19 @@ describe("codr-hub T3 import", () => {
     expect(result.upserts[0]?.hosts).toEqual({
       Steve: { path: "/w/Emily-OS", stickyPort: 5173, launchCmd: "npm run dev" },
     });
+    // A live checkout moves to the folder T3 has open, unless T3 also has the old one open.
+    expect(mergeT3Import([stale], [t3("Emily-OS", "/w/Emily-OS")], context).upserts).toEqual([
+      expect.objectContaining({
+        hosts: { Steve: { path: "/w/Emily-OS", stickyPort: 5173, launchCmd: "npm run dev" } },
+      }),
+    ]);
+    expect(
+      mergeT3Import(
+        [stale],
+        [t3("Emily-OS", "/w/Emily-OS"), t3("Emily-OS old", "/old/Emily-OS/")],
+        context,
+      ),
+    ).toMatchObject({ upserts: [], updated: 0, skipped: 2 });
   });
 
   it("plans T3 projects only for live, unlinked checkouts on this node", () => {
@@ -113,6 +128,21 @@ describe("codr-hub T3 import", () => {
     expect(plan.map((entry) => [entry.project.id, entry.workspaceRoot])).toEqual([
       ["fresh", "/w/fresh"],
     ]);
+  });
+
+  it("reads the one linked T3 on this machine unless told otherwise", () => {
+    const link = (id: string, url: string, status: "reachable" | "expired" = "reachable") => ({
+      environmentId: EnvironmentId.make(id),
+      urls: [url],
+      status,
+    });
+    const stock = link("stock", "http://127.0.0.1:3773");
+    const vps = link("vps", "https://vps.example.ts.net");
+    expect(pickT3Source(undefined, [stock, vps])).toBe("stock");
+    expect(pickT3Source("auto", [stock, link("other", "http://localhost:4000")])).toBeNull();
+    expect(pickT3Source("auto", [link("stock", "http://127.0.0.1:3773", "expired")])).toBeNull();
+    expect(pickT3Source("local", [stock])).toBeNull();
+    expect(pickT3Source(EnvironmentId.make("vps"), [stock])).toBe("vps");
   });
 
   it("converges: a planned checkout imported back from T3 is skipped", () => {

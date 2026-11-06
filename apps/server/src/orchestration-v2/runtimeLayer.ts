@@ -57,6 +57,8 @@ import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as CodrHubService from "../codrHub/CodrHubService.ts";
+import * as PeerLinks from "../peer/PeerLinks.ts";
+import * as PeerMcpClient from "../peer/PeerMcpClient.ts";
 import * as ProcessRunner from "../processRunner.ts";
 
 export const layerEventInfrastructure = Layer.mergeAll(
@@ -299,6 +301,8 @@ const layerCodrHubProvided = CodrHubService.layer.pipe(
       layerThreadManagementProvided,
       layerProjectService,
       ProcessRunner.layer,
+      // Sync with T3 reads a linked stock T3; same layers as server.ts, so memoized.
+      PeerMcpClient.layer.pipe(Layer.provideMerge(PeerLinks.layer)),
     ),
   ),
 );

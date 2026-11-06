@@ -7,10 +7,16 @@ import { createHubMergedProjectsAtomFamily, hubMergedProjectsKey } from "./hubMe
 const STEVE = EnvironmentId.make("steve");
 const UNITY = EnvironmentId.make("unity");
 const UNREAL = EnvironmentId.make("unreal");
+const UNITY_T3 = EnvironmentId.make("unity-t3");
 
-const snapshot = (nodeName: string, projectIds: ReadonlyArray<string>) =>
+const snapshot = (
+  nodeName: string,
+  projectIds: ReadonlyArray<string>,
+  t3EnvironmentId: EnvironmentId | null = null,
+) =>
   ({
     nodeName,
+    t3Sync: { t3EnvironmentId },
     projects: projectIds.map(
       (id) =>
         ({
@@ -31,8 +37,11 @@ describe("hubMergedProjects", () => {
     // What each hubLive stream atom holds: Steve's server restarted, so its
     // stream waits with the snapshot it had; Unreal has never answered.
     const results = new Map<EnvironmentId, AsyncResult.AsyncResult<HubSnapshot, unknown>>([
-      [STEVE, AsyncResult.success(snapshot("Steve", ["codr-hub", "deez"]), { waiting: true })],
-      [UNITY, AsyncResult.success(snapshot("EpicUnityPC", []))],
+      [
+        STEVE,
+        AsyncResult.success(snapshot("Steve", ["codr-hub", "deez"], UNITY), { waiting: true }),
+      ],
+      [UNITY, AsyncResult.success(snapshot("EpicUnityPC", [], UNITY_T3))],
       [UNREAL, AsyncResult.initial(true)],
     ]);
     const hubLive = Atom.family((environmentId: EnvironmentId) =>
@@ -50,6 +59,12 @@ describe("hubMergedProjects", () => {
     const value = AtomRegistry.make().get(merged.family(key!));
     expect(value.projects.map((view) => view.project.id)).toEqual(["codr-hub", "deez"]);
     expect(value.nodeNameByEnvironmentId.get(STEVE)).toBe("Steve");
+    // Unity's Hub reads the stock T3 beside it, and Steve's names an environment that is a Hub.
+    expect([...value.nodeNameByEnvironmentId]).toEqual([
+      [STEVE, "Steve"],
+      [UNITY, "EpicUnityPC"],
+      [UNITY_T3, "EpicUnityPC"],
+    ]);
     expect(value.isPending).toBe(false);
     expect(hubMergedProjectsKey([{ environmentId: UNITY, phase: "available" }])).toBeNull();
   });

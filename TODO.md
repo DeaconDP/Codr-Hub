@@ -152,6 +152,15 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Web: **Sync with T3** switch in Hub settings; **Import from T3** reads **Sync now** while on, last sync result above the list
 - [ ] Owner: turn on Sync with T3 on each node; add a project in T3 and a checkout in the Hub, check both appear once
 
+## Hub over stock T3
+
+- [x] `t3Source` in `node.json` (auto / this server / a linked environment), set through `hub.setNode`
+- [x] Sync with T3 reads a linked stock T3 with `t3_project_list` over `PeerMcpClient`; read-only there, two-minute re-read, clear error on failure
+- [x] Snapshot `t3Sync.t3EnvironmentId`; clients map it to the node name, so Hub rows start threads in the stock T3
+- [x] Import moves a checkout to the folder T3 has open, unless T3 has both open
+- [x] Web: **T3 source** select in Hub settings
+- [ ] Owner: on each machine, link the Hub server to the T3 Code app (see `docs/user/codr-hub.md`), connect the phone to both, and check the Hub lists the app's projects and starts threads there
+
 ## Next engineering slice
 
 - [x] E2: merge the Hub project view across connected environments
