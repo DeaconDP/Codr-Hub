@@ -13,6 +13,7 @@ import { useLocalStorage } from "../../hooks/useLocalStorage";
 
 import { serverEnvironment } from "../../state/server";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Input } from "../ui/input";
@@ -20,6 +21,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { HubProjectDialog } from "./HubProjectDialog";
 import { HubRunningBadge } from "./HubRunningBadge";
+import { HubScanImportDialog } from "./HubScanImportDialog";
 import { HubStageBoard } from "./HubStageBoard";
 import {
   filterAndSortProjects,
@@ -29,6 +31,7 @@ import {
   t3SyncSummary,
   type HubProjectSort,
 } from "@t3tools/client-runtime/codrHub/hubFormat";
+import { needsAttention, projectScanChips } from "@t3tools/client-runtime/codrHub/scanAttention";
 import { useHubAction } from "./useHubAction";
 
 const ProjectsLayout = Schema.Literals(["list", "board"]);
@@ -43,6 +46,8 @@ export function HubProjectsTable(props: {
   const { snapshot, environmentId, projects, selectedNodeName } = props;
   const [query, setQuery] = useState("");
   const [showFinished, setShowFinished] = useState(false);
+  const [attentionOnly, setAttentionOnly] = useState(false);
+  const [importingScan, setImportingScan] = useState(false);
   const [sort, setSort] = useState<HubProjectSort>("rank");
   const [layout, setLayout] = useLocalStorage("codr-hub:projects-layout", "list", ProjectsLayout);
   const [editing, setEditing] = useState<HubMergedProjectView | "new" | null>(null);
@@ -58,7 +63,7 @@ export function HubProjectsTable(props: {
   );
   const [importNote, setImportNote] = useState<string | null>(null);
 
-  const filter = showFinished ? "all" : "open";
+  const filter = attentionOnly ? "attention" : showFinished ? "all" : "open";
   const rows = filterAndSortProjects(projects, {
     filter,
     // The board orders each stage by rank; Sort applies to the list only.
@@ -68,7 +73,7 @@ export function HubProjectsTable(props: {
   });
   const rankById = new Map(
     filterAndSortProjects(projects, {
-      filter,
+      filter: showFinished ? "all" : "open",
       sort: "rank",
       query: "",
       strategy: snapshot.strategy,
@@ -79,6 +84,10 @@ export function HubProjectsTable(props: {
     environmentId,
     "Could not update favourite",
   );
+  const attentionCount = projects.filter((view) => needsAttention(view.project)).length;
+  const knownNodes = [
+    ...new Set([snapshot.nodeName, ...projects.flatMap((view) => Object.keys(view.project.hosts))]),
+  ].sort();
   const finishedCount = projects.filter(
     (view) => view.project.archived || view.project.status === "done",
   ).length;
@@ -148,6 +157,11 @@ export function HubProjectsTable(props: {
                   {importDeez.busy ? "Importing…" : "Import from Deez-PM"}
                 </Button>
               ) : null}
+              {canImportT3 ? (
+                <Button size="sm" variant="outline" onClick={() => setImportingScan(true)}>
+                  Import scan…
+                </Button>
+              ) : null}
               <Button size="sm" onClick={() => setEditing("new")}>
                 Add project
               </Button>
@@ -197,6 +211,16 @@ export function HubProjectsTable(props: {
                 </SelectPopup>
               </Select>
             </div>
+            {attentionCount > 0 || attentionOnly ? (
+              <Button
+                size="sm"
+                variant={attentionOnly ? "secondary" : "ghost-muted"}
+                aria-pressed={attentionOnly}
+                onClick={() => setAttentionOnly((current) => !current)}
+              >
+                Attention ({attentionCount})
+              </Button>
+            ) : null}
             <Button size="sm" onClick={() => setEditing("new")}>
               Add
             </Button>
@@ -208,7 +232,11 @@ export function HubProjectsTable(props: {
           ) : null}
           {rows.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {query.trim() === "" ? "No open projects." : "No matches."}
+              {query.trim() !== ""
+                ? "No matches."
+                : attentionOnly
+                  ? "Nothing needs attention."
+                  : "No open projects."}
             </p>
           ) : layout === "board" ? (
             <HubStageBoard
@@ -273,10 +301,23 @@ export function HubProjectsTable(props: {
                   {importDeez.busy ? "Importing…" : "Import from Deez-PM"}
                 </Button>
               ) : null}
+              {canImportT3 ? (
+                <Button size="sm" variant="ghost-muted" onClick={() => setImportingScan(true)}>
+                  Import scan…
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </>
       )}
+      {importingScan ? (
+        <HubScanImportDialog
+          environmentId={environmentId}
+          nodeName={selectedNodeName === "" ? snapshot.nodeName : selectedNodeName}
+          knownNodes={knownNodes}
+          onClose={() => setImportingScan(false)}
+        />
+      ) : null}
       {editing !== null ? (
         <HubProjectDialog
           environmentId={environmentId}
@@ -329,6 +370,7 @@ function ProjectRow(props: {
             </span>
           </span>
         </button>
+        <ScanChips project={project} />
         <SiteFleetGlance
           previewUrl={project.previewUrl}
           liveUrl={project.liveUrl}
@@ -356,6 +398,24 @@ function ProjectRow(props: {
         Board
       </Button>
     </div>
+  );
+}
+
+const CHIP_VARIANT = { danger: "error", warning: "warning", muted: "secondary" } as const;
+
+function ScanChips(props: { readonly project: HubMergedProjectView["project"] }) {
+  const chips = projectScanChips(props.project);
+  if (chips.length === 0) return null;
+  return (
+    <ul aria-label="Scan flags" className="mt-1 ms-9 flex flex-wrap gap-1">
+      {chips.map((chip) => (
+        <li key={chip.label}>
+          <Badge size="sm" variant={CHIP_VARIANT[chip.tone]} title={chip.nodes.join(", ")}>
+            {chip.label}
+          </Badge>
+        </li>
+      ))}
+    </ul>
   );
 }
 

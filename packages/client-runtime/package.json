@@ -89,6 +89,11 @@
       "import": "./src/codrHub/hubFormat.ts",
       "default": "./src/codrHub/hubFormat.ts"
     },
+    "./codrHub/scanAttention": {
+      "types": "./src/codrHub/scanAttention.ts",
+      "import": "./src/codrHub/scanAttention.ts",
+      "default": "./src/codrHub/scanAttention.ts"
+    },
     "./codrHub/projectPickerModel": {
       "types": "./src/codrHub/projectPickerModel.ts",
       "import": "./src/codrHub/projectPickerModel.ts",
