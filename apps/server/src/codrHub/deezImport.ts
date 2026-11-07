@@ -133,7 +133,7 @@ function mergeHostFill(
   }
   return {
     hostsChanged: true,
-    host: { path: current.path, stickyPort, launchCmd },
+    host: { ...current, stickyPort, launchCmd },
   };
 }
 

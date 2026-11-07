@@ -24,6 +24,7 @@ export const repoKey = (url: string | null | undefined) => {
     .replace(/^[a-z+]+:\/\//, "")
     .replace(/^[^@/]+@/, "")
     .replace(/^([^/:]+):/, "$1/")
+    .replace(/\/{2,}/g, "/")
     .replace(/^www\./, "")
     .replace(/\.git$/, "")
     .replace(/\/+$/, "");
@@ -104,6 +105,10 @@ export function mergeT3Import(
       hosts: {
         ...match.hosts,
         [context.nodeName]: {
+          // Scan facts describe the old folder; other checkouts stay valid.
+          ...(match.hosts[context.nodeName]?.otherCheckouts
+            ? { otherCheckouts: match.hosts[context.nodeName]!.otherCheckouts }
+            : {}),
           path: t3.workspaceRoot,
           stickyPort: match.hosts[context.nodeName]?.stickyPort ?? null,
           launchCmd: match.hosts[context.nodeName]?.launchCmd ?? null,

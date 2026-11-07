@@ -120,6 +120,9 @@ import {
   pickNextProject,
   stageLabel,
 } from "./selection.ts";
+import { isoDay, scanDisk, scanFileName, scanRoots, type ScanConfig } from "./diskScan.ts";
+import { mergeScanImport, resolveScanNodes } from "./scanImport.ts";
+import { formatScanTsv, parseScanTsv } from "./scanTsv.ts";
 import { mergeT3Import, planT3Creates, type T3ProjectInput } from "./t3Import.ts";
 import { listLinkedT3Projects, pickT3Source, remoteT3Links } from "./t3Source.ts";
 import { ownerTryStage, reduceTestHandoff } from "./testHandoff.ts";
@@ -872,7 +875,11 @@ export const layer = Layer.effect(
         const path = localPath !== undefined ? localPath : (previous?.path ?? null);
         // Host entries need a path; sticky/launch alone cannot create one.
         if (path !== null) {
+          const { scan, ...kept } = previous ?? {};
           hosts[nodeName] = {
+            ...kept,
+            // Scan facts describe one folder; moving the checkout drops them.
+            ...(scan !== undefined && previous?.path === path ? { scan } : {}),
             path,
             stickyPort: stickyPort !== undefined ? stickyPort : (previous?.stickyPort ?? null),
             launchCmd: launchCmd !== undefined ? launchCmd : (previous?.launchCmd ?? null),
@@ -1329,6 +1336,120 @@ export const layer = Layer.effect(
       };
     }, writeLock.withPermits(1));
 
+    /** Scans this machine with `codr-hub/scan.json` and keeps the TSV under `codr-hub/scans/`. */
+    const scanThisMachine = Effect.fn("codrHub.scanThisMachine")(function* (nodeName: string) {
+      const configFile = path.join(paths.root, "scan.json");
+      const config: ScanConfig = (yield* fs
+        .exists(configFile)
+        .pipe(Effect.orElseSucceed(() => false)))
+        ? ((yield* fs.readFileString(configFile).pipe(
+            Effect.flatMap(decodeJson),
+            Effect.mapError(
+              (cause) => new HubError({ message: `${configFile} is not valid JSON.`, cause }),
+            ),
+          )) as ScanConfig)
+        : {};
+      const owner = /github\.com[:/]+([^/]+)\//i.exec(
+        (yield* io(Store.readRemote(paths))) ?? "",
+      )?.[1];
+      const today = isoDay(yield* nowMs);
+      const rows = yield* Effect.tryPromise({
+        try: () =>
+          scanDisk({
+            machine: config.machine ?? NodeOS.hostname().replace(/\.local$/i, ""),
+            nickname: nodeName,
+            owners: config.owners ?? (owner === undefined ? [] : [owner]),
+            roots: scanRoots(config),
+            today,
+            platform,
+          }),
+        catch: (cause) => new HubError({ message: "Could not scan this machine.", cause }),
+      });
+      const text = formatScanTsv(rows);
+      const file = path.join(paths.root, "scans", scanFileName(NodeOS.hostname(), today));
+      yield* fs.makeDirectory(path.dirname(file), { recursive: true }).pipe(
+        Effect.andThen(writeFileStringAtomically({ filePath: file, contents: text })),
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+        Effect.catch((cause) =>
+          Effect.logWarning("Codr-Hub could not keep the scan file", { cause }),
+        ),
+      );
+      return text;
+    });
+
+    const importScan = Effect.fn("codrHub.importScan")(function* (
+      input: Extract<HubImportInput, { source: "scan" }>,
+    ) {
+      const node = yield* Ref.get(nodeRef);
+      const sources = [input.text, input.path, input.scanThisMachine === true ? true : undefined];
+      if (sources.filter((source) => source !== undefined).length !== 1) {
+        return yield* new HubError({
+          message: "Choose one scan: a file, a path on this machine, or Scan this machine.",
+        });
+      }
+      const text =
+        input.text ??
+        (input.path !== undefined
+          ? yield* fs
+              .readFileString(input.path)
+              .pipe(
+                Effect.mapError(
+                  (cause) => new HubError({ message: `Could not read ${input.path}.`, cause }),
+                ),
+              )
+          : yield* scanThisMachine(input.nodeName ?? node.nodeName));
+      const parsed = parseScanTsv(text);
+      if (parsed.rows.length === 0) {
+        return yield* new HubError({
+          message: parsed.errors[0] ?? "The scan has no rows.",
+        });
+      }
+      const existing = [...(yield* Ref.get(projectsRef)).values()];
+      const knownNodes = [
+        ...new Set([node.nodeName, ...existing.flatMap((project) => Object.keys(project.hosts))]),
+      ];
+      const resolved = resolveScanNodes(parsed.rows, {
+        nodeName:
+          input.scanThisMachine === true ? (input.nodeName ?? node.nodeName) : input.nodeName,
+        knownNodes,
+      });
+      if ("error" in resolved) return yield* new HubError({ message: resolved.error });
+      // Only this machine can tell whether a stored checkout still exists.
+      const missingPaths = new Set<string>();
+      if ([...resolved.nodes.values()].includes(node.nodeName)) {
+        for (const project of existing) {
+          const host = project.hosts[node.nodeName];
+          if (host && !(yield* fs.exists(host.path).pipe(Effect.orElseSucceed(() => false)))) {
+            missingPaths.add(`${node.nodeName}\0${project.id}`);
+          }
+        }
+      }
+      const merged = mergeScanImport(existing, parsed.rows, {
+        nowIso: yield* nowIso,
+        nodeOf: (row) => resolved.nodes.get(row.nickname)!,
+        missingPaths,
+      });
+      if (input.dryRun !== true && merged.upserts.length > 0) {
+        const machines = [...new Set(resolved.nodes.values())].join(", ");
+        yield* write(
+          `Import scan from ${machines}: ${merged.created} new, ${merged.updated} updated projects`,
+          Effect.forEach(merged.upserts, saveProject, { discard: true }),
+        );
+        yield* refreshGlances;
+      }
+      return {
+        imported: merged.created,
+        updated: merged.updated,
+        skipped: merged.skipped,
+        rows: merged.rows,
+        matched: merged.matched,
+        hostsAdded: merged.hostsAdded,
+        ambiguous: [...parsed.errors, ...merged.ambiguous],
+        dryRun: input.dryRun === true,
+      };
+    }, writeLock.withPermits(1));
+
     const importProjects: CodrHubService["Service"]["importProjects"] = (input) =>
       input.source === "t3"
         ? Ref.get(nodeRef).pipe(
@@ -1336,7 +1457,9 @@ export const layer = Layer.effect(
             Effect.flatMap((node) => syncWithT3({ toT3: node.syncT3 === true })),
             writeLock.withPermits(1),
           )
-        : importDeezProjects(input);
+        : input.source === "scan"
+          ? importScan(input)
+          : importDeezProjects(input);
 
     const runSync = Effect.fn("codrHub.runSync")(function* (input: HubSyncInput) {
       if (input.remote !== undefined && input.remote !== (yield* io(Store.readRemote(paths)))) {
