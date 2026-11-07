@@ -218,7 +218,7 @@ export function HubProjectsTable(props: {
                 aria-pressed={attentionOnly}
                 onClick={() => setAttentionOnly((current) => !current)}
               >
-                Attention ({attentionCount})
+                Needs attention ({attentionCount})
               </Button>
             ) : null}
             <Button size="sm" onClick={() => setEditing("new")}>

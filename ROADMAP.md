@@ -19,7 +19,7 @@ Portfolio store (git-backed), strategy list, project table, Deez-PM import, paci
 
 ### E3. Fold in Deez-Project-Manager
 
-Kanban tasks per project (PR #4) and site fleet: preview/live URLs, sticky ports, launch commands (PR #5), both on `codr-hub/v0.1`. Remaining: the machine monitor, Unity Hub/VCC imports, tags and saved views.
+Kanban tasks per project (PR #4) and site fleet: preview/live URLs, sticky ports, launch commands (PR #5), both on `codr-hub/v0.1`. Remaining: the machine monitor, Unity Hub/VCC imports (the disk scan finds Unity and VRChat projects on disk, but not Unity Hub or VCC project lists), tags and saved views.
 
 ### E4. Fold in Cursor-Hub
 
@@ -95,7 +95,10 @@ Codr-Hub manages the lifecycle around the work T3 does: scope, plan, organise, t
 - 2026-10-27: Machine monitor deferred behind site fleet; Ada metrics overlap E5 Fuel Gauge and are host-scoped, not portfolio cards. `ROADMAP.md` E3
 - 2026-10-05: Claude banked resets aren't read on macOS because T3 skips the Keychain. Fuel Gauge reads it via `/usr/bin/security`; porting that touches credential handling and needs a security review. `apps/server/src/provider/Layers/claudeResetCredits.ts:153`
 - 2026-10-05: Automatic takeover of an offline pacing owner deferred; a timeout could let its paused threads resume alongside a new owner. Recover the owning node and drain it before handover. `apps/server/src/codrHub/quotaOwnership.ts:158`
-- 2026-10-05: No disk "scan for checkouts" yet. **Import from T3** and **Sync with T3** fix a missing Deez-PM path when T3 has that project open; for any other project, fix the path by hand. `apps/server/src/codrHub/t3Import.ts`
+- 2026-11-07: Disk scans are not on a schedule. **Import scan… → Scan** refreshes a machine on demand; a weekly server timer would walk large drives (du on every project) inside the server, so it waits for a request. `apps/server/src/codrHub/CodrHubService.ts:1340`
+- 2026-11-07: The scanner never writes `half-copy` or `stale-scan`, and writes `at-risk` only for roots marked so in `scan.json`. Each needs facts from other machines (is this the only copy, is it complete). The import and Needs attention honour them when a TSV carries them. `apps/server/src/codrHub/diskScan.ts`
+- 2026-11-07: **Import scan…** is web only; the phone shows scan flags and Needs attention but cannot upload a TSV. `apps/mobile/src/features/hub/HubRouteScreen.tsx`
+- 2026-11-07: Scan import never removes anything. A folder deleted from disk keeps its checkout until edited, and a project deleted in the Hub comes back on the next import of a scan that still lists it. `apps/server/src/codrHub/scanImport.ts`
 - 2026-10-05: The Hub has no command palette entry or keybinding yet. Each would be another upstream seam, so they wait until the page settles. `apps/web/src/components/CommandPalette.tsx`
 - 2026-10-05: No orchestrator MCP tools for the hub yet (agents can't read or rank the portfolio). `apps/server/src/mcp/`
 - 2026-10-05: Autopilot launches one thread per project at a time and does not continue a thread across stages; stage advancement is manual. `apps/server/src/codrHub/selection.ts:30`

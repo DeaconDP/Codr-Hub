@@ -8,7 +8,7 @@ Codr-Hub adds a **Hub** page (sidebar → Hub) that ranks your projects, shows h
 2. Double-click `run.command` (macOS, Linux) or `run.bat` (Windows) in your Codr-Hub folder. You need Node 24 (the launcher installs it through nvm if you have nvm). The first run installs everything else and opens a signed-in browser at http://localhost:5733. Run it again later to reopen the app.
 3. Open **Hub** from the sidebar.
 4. Check **This node's name** in Hub settings. It defaults to the machine's name; each machine keeps its own checkout paths under it.
-5. Click **Import from T3** to bring in this machine's T3 projects, **Import from Deez-PM** for your existing list, or **Add project**. To keep T3 and the Hub in step from then on, turn on **Sync with T3** in Hub settings. See [Importing from T3](#importing-from-t3).
+5. Click **Import from T3** to bring in this machine's T3 projects, **Import from Deez-PM** for your existing list, or **Add project**. To keep T3 and the Hub in step from then on, turn on **Sync with T3** in Hub settings. See [Importing from T3](#importing-from-t3). To bring in every project folder on the machine, including Unity, Unreal and folders without git, use **Import scan…**. See [Importing a disk scan](#importing-a-disk-scan).
 6. In Hub settings, set **Portfolio git remote** to a private repository and click **Save & sync**. Use the same remote on every machine. See [Sharing across machines](#sharing-across-machines).
 7. Optional: run `npm run codr:always-on` in your Codr-Hub folder to keep this machine's Hub running and updated. See [Always-on machines](#always-on-machines).
 8. Optional: use the Hub from your phone over Tailscale, or install the iPhone app. See [On your phone](#on-your-phone).
@@ -47,6 +47,57 @@ If you keep your projects in the T3 Code app, on one machine or several, link th
 The Hub only reads the apps: it never adds projects to them. It checks for new projects every two minutes. A checkout moves to the folder the app has open, unless the app has both folders open. If an app can't be reached, the line above the list names it, and projects from the other apps still sync. Links last 30 days; link again with a new code to renew.
 
 To start threads from the Hub in an app's projects, connect your phone or browser to that T3 Code app as well as to the Hub server.
+
+## Importing a disk scan
+
+**Import scan…** under the projects list adds every project folder a disk scan found, so the Hub lists all your projects on every machine, not only the ones open in T3. Choose one of:
+
+- **File**: upload a scan `.tsv`, from this machine or a copy from another one.
+- **Path on** the selected machine: a `.tsv` already on that machine.
+- **Scan** the selected machine: scan it now and import the result. See [Scanning your disks](#scanning-your-disks).
+
+**Preview** shows what would change without saving. The same repository on several machines becomes one project with a checkout on each. A folder without a git remote joins a project with the same name, unless two projects share that name or the machine has two working folders by that name; those are listed for you to check. When a machine holds several folders of one project, the one not marked as a copy, duplicate or backup is its checkout and the rest are listed as other folders.
+
+New projects start at autonomy **Off**, tagged with their engine or platform (such as `unity` or `web`). A project with only archived folders or copies starts archived. For projects already in the Hub, the import only fills empty fields and adds missing checkouts. Priority, status, stage, strategy, notes, favourites and autonomy are never changed. Running the same import again changes nothing.
+
+Each row's machine comes from the file's nickname column. If that name isn't a machine in the Hub yet, choose the machine under **Machine**.
+
+## Needs attention
+
+**Needs attention** above the projects list shows projects that need a look, based on the latest scan:
+
+- a folder marked at risk, duplicate or half-copy
+- a checkout with 20 or more changed files, or commits that aren't pushed
+- a code project (not Unity, Unreal or VRChat) with no git remote, outside Archive
+
+Scan flags show as small labels under each project, with **at-risk** in red. Hover a label to see which machines it applies to. On the phone, tap **Needs attention** above the Ranked or Favourites list.
+
+## Scanning your disks
+
+Each machine scans itself. In your Codr-Hub folder, run:
+
+```sh
+npm run codr:scan
+```
+
+It needs only Node 24, on macOS, Linux and Windows. It scans the Workshop folder (`~/Desktop/Workshop`: Private, Public, and the Archive, Tools, Experiments, Workspaces, Assets and Compatibility folders under Other) and writes `<HOSTNAME>-<date>.tsv` to `.t3/userdata/codr-hub/scans/`. It stops at each project's root and skips git worktrees, `node_modules`, `Library`, `Intermediate` and other build folders. Add `--no-size` to skip folder sizes, which take longest.
+
+To scan other folders, list them in `.t3/userdata/codr-hub/scan.json`:
+
+```json
+{
+  "machine": "Unity PC",
+  "nickname": "EpicUnityPC",
+  "roots": [
+    { "path": "F:\\VR", "category": "Other" },
+    { "path": "D:\\Projects", "category": "Private", "flags": ["at-risk"] }
+  ]
+}
+```
+
+Folders outside the Workshop are marked `outside-workshop`. `flags` marks every folder under that root, such as `at-risk` for a failing drive. `nickname` should be the machine's name in the Hub. **Scan this machine** in the Hub uses the same settings. `npm run codr:scan -- --help` lists one-off options such as `--root` and `--nickname`.
+
+The Hub doesn't rescan on a schedule. On an always-on machine, choose **Import scan… → Scan** when you want to refresh it, for example weekly.
 
 ## Choosing a project for a new thread
 
@@ -128,7 +179,7 @@ To install the iPhone app instead, plug in and unlock the iPhone, then run `npm 
 
 In the app, tap **Add environment**, enter one machine's Tailscale address (such as `pc.tail1234.ts.net`, or with `:5733` for a dev server), and leave the code empty. Your other Codr-Hub machines on that Tailscale account then appear on their own. The phone must be on the tailnet, and the machine must serve Codr-Hub with Tailscale Serve.
 
-The app has a **Hub** tab, as long as it is connected to a machine running Codr-Hub. **Ranked** lists open projects in portfolio order, and **Favourites** shows the ones you star. **Stages** groups open projects by lifecycle stage, in rank order. Tap one to see its board tasks: tick a task off, untick it, add one, or start a **New thread** in that project. Move a project to another stage from its **⋯** menu. **Sort** above the list reorders either one by recent activity, favourites, priority, status, or name. Tap a project to start a task in it. **Overview** ranks projects by agent turns, agent time, or commits over the window you pick, from 24 hours to all time, with a daily chart, the agents you used, and high-priority or strategy projects that got no attention. A project on several machines counts its commits once. Tap the **⋯** on a project to change its priority, status, stage, or strategy, or to archive it; **Show finished** brings archived projects back so you can undo that. Choosing a project for a new task lists your favourites first; tap a star there to favourite a project, or use **Sort** to order by recent activity, priority, status, or name. **Pace** shows each connected machine's subscriptions against their targets. There you can switch that machine's autopilot, run it once, or deploy a banked reset; each of those asks first, except switching the autopilot off. To change autonomy, add projects, or reorder strategy priorities, use the Hub in a browser.
+The app has a **Hub** tab, as long as it is connected to a machine running Codr-Hub. **Ranked** lists open projects in portfolio order, and **Favourites** shows the ones you star. **Stages** groups open projects by lifecycle stage, in rank order. Tap one to see its board tasks: tick a task off, untick it, add one, or start a **New thread** in that project. Move a project to another stage from its **⋯** menu. **Sort** above the list reorders either one by recent activity, favourites, priority, status, or name. Tap a project to start a task in it. **Needs attention** above the list shows only projects that need a look, and scan flags appear under each project, at-risk in red. **Overview** ranks projects by agent turns, agent time, or commits over the window you pick, from 24 hours to all time, with a daily chart, the agents you used, and high-priority or strategy projects that got no attention. A project on several machines counts its commits once. Tap the **⋯** on a project to change its priority, status, stage, or strategy, or to archive it; **Show finished** brings archived projects back so you can undo that. Choosing a project for a new task lists your favourites first; tap a star there to favourite a project, or use **Sort** to order by recent activity, priority, status, or name. **Pace** shows each connected machine's subscriptions against their targets. There you can switch that machine's autopilot, run it once, or deploy a banked reset; each of those asks first, except switching the autopilot off. To change autonomy, add projects, or reorder strategy priorities, use the Hub in a browser.
 
 ## Always-on machines
 

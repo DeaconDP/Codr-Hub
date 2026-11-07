@@ -84,7 +84,9 @@ export function scanImportSummary(result: HubImportResult): string {
   const lead = result.dryRun ? "Would add" : "Added";
   return [
     `${lead} ${result.imported} new, matched ${result.matched ?? 0}, ${result.hostsAdded ?? 0} machine checkouts, ${result.updated} updated, ${result.skipped} skipped from ${result.rows ?? 0} rows.`,
-    (result.ambiguous?.length ?? 0) > 0 ? `${result.ambiguous!.length} need a look.` : null,
+    (result.ambiguous?.length ?? 0) > 0
+      ? `${result.ambiguous!.length} ${result.ambiguous!.length === 1 ? "needs" : "need"} a look.`
+      : null,
   ]
     .filter((part) => part !== null)
     .join(" ");

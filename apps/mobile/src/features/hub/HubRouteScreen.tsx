@@ -213,7 +213,7 @@ function ProjectList(props: {
                 attentionOnly ? "font-t3-bold text-foreground" : "text-foreground-muted",
               )}
             >
-              {attentionOnly ? "Show all" : `Attention (${attentionRows.length})`}
+              {attentionOnly ? "Show all" : `Needs attention (${attentionRows.length})`}
             </Text>
           </Pressable>
         ) : (
