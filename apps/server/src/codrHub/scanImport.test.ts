@@ -112,28 +112,21 @@ describe("codr-hub scan import", () => {
 
   it("keeps the folder without copy flags as the checkout and the rest as other checkouts", () => {
     const remote = "https://github.com/DeaconDP/deepsec.git";
-    const result = mergeScanImport(
-      [],
-      [
-        row({
-          name: "deepsec",
-          path: "/w/Recovered/deepsec",
-          remote,
-          flags: ["copy", "duplicate"],
-        }),
-        row({ name: "deepsec", path: "/w/Tools/deepsec", remote, dirty: 279 }),
-        row({ name: "Only copy", path: "/w/Recovered/Only copy", flags: ["copy"] }),
-      ],
-      context,
-    );
+    const rows = [
+      row({ name: "deepsec", path: "/w/Recovered/deepsec", remote, flags: ["copy", "duplicate"] }),
+      row({ name: "deepsec", path: "/w/Tools/deepsec", remote, dirty: 279 }),
+      row({ name: "Only copy", path: "/w/Recovered/Only copy", flags: ["copy"] }),
+    ];
+    const result = mergeScanImport([], rows, context);
     const deepsec = result.upserts.find((project) => project.id === "deepsec")!;
     expect(deepsec.hosts.Steve).toMatchObject({
       path: "/w/Tools/deepsec",
       scan: { dirty: 279 },
       otherCheckouts: [{ path: "/w/Recovered/deepsec", scan: { flags: ["copy", "duplicate"] } }],
     });
-    // A copy with no working folder anywhere is filed away.
+    // A copy with no working folder anywhere is filed away, and stays put on a re-run.
     expect(result.upserts.find((project) => project.id === "only-copy")?.archived).toBe(true);
+    expect(mergeScanImport(result.upserts, rows, context).upserts).toEqual([]);
   });
 
   it("matches by name only when the name is unique, and never merges two working folders", () => {

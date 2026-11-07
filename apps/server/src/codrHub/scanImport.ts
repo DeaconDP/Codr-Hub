@@ -304,10 +304,10 @@ export function mergeScanImport(
     }
     const allRows = [...unit.byNode.values()].flat().sort(byPreference);
     const lead = allRows[0]!;
+    const live = allRows.filter(
+      (row) => row.category !== "Archive" && !row.flags.some((flag) => DEAD_FLAGS.has(flag)),
+    );
     if (found === undefined) {
-      const live = allRows.filter(
-        (row) => row.category !== "Archive" && !row.flags.some((flag) => DEAD_FLAGS.has(flag)),
-      );
       const category = live[0]?.category ?? null;
       const engine = lead.lane.toLowerCase();
       const base = slugifyProjectName(lead.name);
@@ -359,12 +359,11 @@ export function mergeScanImport(
       touchedHosts.add(`${found.id}\0${node}`);
     }
     const engine = lead.lane.toLowerCase();
-    const live = allRows.find((row) => row.category !== "Archive");
     const next: HubProject = {
       ...found,
       hosts,
       repoUrl: found.repoUrl ?? (unit.remote === null ? null : repoUrlOf(unit.remote)),
-      category: found.category ?? live?.category ?? null,
+      category: found.category ?? live[0]?.category ?? null,
       tags: found.tags.length > 0 || engine === "other" ? found.tags : [engine],
     };
     if (stable(next) === stable(found)) continue;
