@@ -3,7 +3,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 
 import { mapDeezProject } from "./deezImport.ts";
 import { mergeT3Import, planT3Creates, repoKey, type T3ProjectInput } from "./t3Import.ts";
-import { pickT3Source } from "./t3Source.ts";
+import { pickT3Source, remoteT3Links } from "./t3Source.ts";
 
 const context = {
   nodeName: "Steve",
@@ -143,6 +143,11 @@ describe("codr-hub T3 import", () => {
     expect(pickT3Source("auto", [link("stock", "http://127.0.0.1:3773", "expired")])).toBeNull();
     expect(pickT3Source("local", [stock])).toBeNull();
     expect(pickT3Source(EnvironmentId.make("vps"), [stock])).toBe("vps");
+    const expired = link("old", "https://old.example.ts.net", "expired");
+    const ids = (own: EnvironmentId | null) =>
+      remoteT3Links([stock, vps, expired], own).map((entry) => entry.environmentId);
+    expect(ids(EnvironmentId.make("stock"))).toEqual(["vps"]);
+    expect(ids(EnvironmentId.make("vps"))).toEqual([]);
   });
 
   it("converges: a planned checkout imported back from T3 is skipped", () => {

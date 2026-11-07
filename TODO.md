@@ -162,6 +162,7 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Snapshot `t3Sync.t3EnvironmentId`; clients map it to the node name, so Hub rows start threads in the stock T3
 - [x] Import moves a checkout to the folder T3 has open, unless T3 has both open
 - [x] Web: **T3 source** select in Hub settings
+- [x] Sync with T3 also reads every other machine's linked T3 as its own node (link label); snapshot `t3Sync.t3Sources`; one unreachable machine is named in the error without blocking the rest
 - [ ] Owner: on each machine, link the Hub server to the T3 Code app (see `docs/user/codr-hub.md`), connect the phone to both, and check the Hub lists the app's projects and starts threads there
 
 ## Next engineering slice

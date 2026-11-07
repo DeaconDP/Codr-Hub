@@ -334,8 +334,10 @@ export const HubT3SyncStatus = Schema.Struct({
   lastResult: Schema.NullOr(HubT3SyncResult),
   lastError: Schema.NullOr(Schema.String),
   source: Schema.optional(HubT3Source),
-  /** The linked T3 environment the last sync read, or null when it read this server. */
-  t3EnvironmentId: Schema.optional(Schema.NullOr(EnvironmentId)),
+  /** Linked T3 environments the last sync read, each with the node name its projects took. */
+  t3Sources: Schema.optional(
+    Schema.Array(Schema.Struct({ environmentId: EnvironmentId, nodeName: Schema.String })),
+  ),
 });
 export type HubT3SyncStatus = typeof HubT3SyncStatus.Type;
 

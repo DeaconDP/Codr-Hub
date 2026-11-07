@@ -8,15 +8,16 @@ const STEVE = EnvironmentId.make("steve");
 const UNITY = EnvironmentId.make("unity");
 const UNREAL = EnvironmentId.make("unreal");
 const UNITY_T3 = EnvironmentId.make("unity-t3");
+const UNREAL_T3 = EnvironmentId.make("unreal-t3");
 
 const snapshot = (
   nodeName: string,
   projectIds: ReadonlyArray<string>,
-  t3EnvironmentId: EnvironmentId | null = null,
+  t3Sources: ReadonlyArray<{ environmentId: EnvironmentId; nodeName: string }> = [],
 ) =>
   ({
     nodeName,
-    t3Sync: { t3EnvironmentId },
+    t3Sync: { t3Sources },
     projects: projectIds.map(
       (id) =>
         ({
@@ -39,9 +40,24 @@ describe("hubMergedProjects", () => {
     const results = new Map<EnvironmentId, AsyncResult.AsyncResult<HubSnapshot, unknown>>([
       [
         STEVE,
-        AsyncResult.success(snapshot("Steve", ["codr-hub", "deez"], UNITY), { waiting: true }),
+        AsyncResult.success(
+          snapshot(
+            "Steve",
+            ["codr-hub", "deez"],
+            [
+              { environmentId: UNITY, nodeName: "Steve" },
+              { environmentId: UNREAL_T3, nodeName: "EpicUnrealPC" },
+            ],
+          ),
+          { waiting: true },
+        ),
       ],
-      [UNITY, AsyncResult.success(snapshot("EpicUnityPC", [], UNITY_T3))],
+      [
+        UNITY,
+        AsyncResult.success(
+          snapshot("EpicUnityPC", [], [{ environmentId: UNITY_T3, nodeName: "EpicUnityPC" }]),
+        ),
+      ],
       [UNREAL, AsyncResult.initial(true)],
     ]);
     const hubLive = Atom.family((environmentId: EnvironmentId) =>
@@ -59,10 +75,12 @@ describe("hubMergedProjects", () => {
     const value = AtomRegistry.make().get(merged.family(key!));
     expect(value.projects.map((view) => view.project.id)).toEqual(["codr-hub", "deez"]);
     expect(value.nodeNameByEnvironmentId.get(STEVE)).toBe("Steve");
-    // Unity's Hub reads the stock T3 beside it, and Steve's names an environment that is a Hub.
+    // Unity's Hub reads the stock T3 beside it; Steve's sources name an environment that is a
+    // Hub (skipped) and Unreal's stock T3, which has no Hub of its own.
     expect([...value.nodeNameByEnvironmentId]).toEqual([
       [STEVE, "Steve"],
       [UNITY, "EpicUnityPC"],
+      [UNREAL_T3, "EpicUnrealPC"],
       [UNITY_T3, "EpicUnityPC"],
     ]);
     expect(value.isPending).toBe(false);

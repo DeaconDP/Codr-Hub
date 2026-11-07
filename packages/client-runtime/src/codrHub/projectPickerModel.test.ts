@@ -133,6 +133,26 @@ describe("t3ProjectForHubView", () => {
       nodeNames: ["Bob"],
     });
   });
+
+  it("opens a project hosted only on a machine with a linked T3 and no Hub", () => {
+    // Steve's Hub reads EpicUnityPC's stock T3, so only `hosts` knows that checkout.
+    const unityT3 = "env-unity-t3" as EnvironmentId;
+    const host = { path: "D:/work/game", stickyPort: null, launchCmd: null };
+    const view = hub("game", { hosts: { EpicUnityPC: host } }, [["Steve", null]]);
+    const withUnity = new Map([...nodes, [unityT3, "EpicUnityPC"]]);
+    const projects = [{ environmentId: unityT3, workspaceRoot: "D:/work/game" }];
+    expect(hubThreadTarget(view, projects, withUnity)).toEqual({
+      kind: "open",
+      project: projects[0],
+    });
+    const [row] = linkPickerRows([group("Game", [[unityT3, "D:/work/game"]])], [view], withUnity);
+    expect(row?.hub).toBe(view);
+    // Not connected to that T3: name the machine to connect.
+    expect(hubThreadTarget(view, [], withUnity)).toEqual({
+      kind: "unavailable",
+      nodeNames: ["EpicUnityPC"],
+    });
+  });
 });
 
 describe("pickerSections", () => {

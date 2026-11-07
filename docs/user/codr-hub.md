@@ -37,16 +37,16 @@ Turn it on, or run the import, on each machine from the selector at the top.
 
 ### Using the T3 Code app beside the Hub
 
-If you keep your projects in the T3 Code app and run Codr-Hub beside it, link the Hub server to that app so the Hub reads the app's projects instead of its own:
+If you keep your projects in the T3 Code app, on one machine or several, link the Hub server to each app so the Hub reads their projects:
 
-1. Turn on **Linked environments** in **Settings → Labs**, in both the T3 Code app and the Hub server.
-2. In the T3 Code app, create a pairing code in **Settings → Sharing & access**. Read-only access is enough.
-3. In the Hub server, open **Settings → Environments → Linked environments**, choose **Link**, enter the app's address (`http://localhost:3773`) and the pairing code.
-4. Turn on **Sync with T3** in Hub settings. **T3 source** set to **Auto** picks the app up when it is the only linked environment on this machine; otherwise choose it there.
+1. Turn on **Linked environments** in **Settings → Labs**, in each T3 Code app and in the Hub server.
+2. In each T3 Code app, create a pairing code in **Settings → Sharing & access**. Read-only access is enough.
+3. In the Hub server, open **Settings → Environments → Linked environments** and choose **Link** for each app: enter its address and its pairing code. The app on the Hub's own machine is at `http://localhost:3773`; for another machine use its tailnet or LAN address, and give the link that machine's name, since the Hub shows its projects under that name.
+4. Turn on **Sync with T3** in Hub settings. **T3 source** set to **Auto** picks the app on this machine when there is one link to it; otherwise choose it there. Apps on other machines are always read, each as its own machine.
 
-The Hub then only reads the app: it never adds projects to it. It checks for new projects every two minutes. A checkout moves to the folder the app has open, unless the app has both folders open. If the app can't be reached, the line above the list says so and your projects stay as they are. Links last 30 days; link again with a new code to renew.
+The Hub only reads the apps: it never adds projects to them. It checks for new projects every two minutes. A checkout moves to the folder the app has open, unless the app has both folders open. If an app can't be reached, the line above the list names it, and projects from the other apps still sync. Links last 30 days; link again with a new code to renew.
 
-To start threads from the Hub in the app's projects, connect your phone or browser to the T3 Code app as well as to the Hub server.
+To start threads from the Hub in an app's projects, connect your phone or browser to that T3 Code app as well as to the Hub server.
 
 ## Choosing a project for a new thread
 

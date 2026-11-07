@@ -1,6 +1,6 @@
 /**
- * Sync with T3 can read the projects of this machine's stock T3 server through a linked
- * environment (`PeerLinks`), so a Hub server beside it sees the projects the owner works in.
+ * Sync with T3 reads stock T3 servers through linked environments (`PeerLinks`): this
+ * machine's one as this node, and every other machine's as a node named by the link label.
  */
 import {
   type EnvironmentId,
@@ -44,6 +44,16 @@ export function pickT3Source(
     (link) => link.status !== "expired" && link.urls.some(isLoopbackUrl),
   );
   return onThisMachine.length === 1 ? onThisMachine[0]!.environmentId : null;
+}
+
+/** Linked T3s on other machines, read as their own nodes. Never this node's source. */
+export function remoteT3Links<
+  Link extends Pick<PeerLinkSummary, "environmentId" | "urls" | "status">,
+>(links: ReadonlyArray<Link>, own: EnvironmentId | null): Link[] {
+  return links.filter(
+    (link) =>
+      link.status !== "expired" && link.environmentId !== own && !link.urls.some(isLoopbackUrl),
+  );
 }
 
 /** Every project in a linked environment, read with `t3_project_list` a page at a time. */

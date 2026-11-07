@@ -33,6 +33,17 @@ export interface PickerRow<G extends PickerGroup = PickerGroup> {
 const linkKey = (nodeName: string, path: string) =>
   `${nodeName}\0${normalizeProjectPathForComparison(path)}`;
 
+/**
+ * Each node's checkout. `hosts` adds machines that have a linked stock T3 but no Hub server,
+ * which no snapshot reports as a node.
+ */
+const checkoutKeys = (view: HubMergedProjectView) => [
+  ...view.nodes.flatMap((node) =>
+    node.localPath === null ? [] : [linkKey(node.nodeName, node.localPath)],
+  ),
+  ...Object.entries(view.project.hosts).map(([nodeName, host]) => linkKey(nodeName, host.path)),
+];
+
 /** Pairs each T3 project group with the portfolio project checked out at one of its paths. */
 export function linkPickerRows<G extends PickerGroup>(
   groups: ReadonlyArray<G>,
@@ -41,9 +52,7 @@ export function linkPickerRows<G extends PickerGroup>(
 ): PickerRow<G>[] {
   const byCheckout = new Map<string, HubMergedProjectView>();
   for (const view of hubProjects) {
-    for (const node of view.nodes) {
-      if (node.localPath !== null) byCheckout.set(linkKey(node.nodeName, node.localPath), view);
-    }
+    for (const key of checkoutKeys(view)) byCheckout.set(key, view);
   }
   return groups.map((group) => {
     for (const member of group.memberProjects) {
@@ -206,11 +215,7 @@ export function t3ProjectForHubView<
   projects: ReadonlyArray<P>,
   nodeNameByEnvironmentId: ReadonlyMap<EnvironmentId, string>,
 ): P | null {
-  const checkouts = new Set(
-    view.nodes.flatMap((node) =>
-      node.localPath === null ? [] : [linkKey(node.nodeName, node.localPath)],
-    ),
-  );
+  const checkouts = new Set(checkoutKeys(view));
   const matches = projects.filter((project) => {
     const nodeName = nodeNameByEnvironmentId.get(project.environmentId);
     return nodeName !== undefined && checkouts.has(linkKey(nodeName, project.workspaceRoot));
@@ -254,7 +259,15 @@ export function hubThreadTarget<
     const node = checkouts.find((checkout) => checkout.nodeName === nodeName);
     if (node) return { kind: "add", environmentId, nodeName, workspaceRoot: node.localPath! };
   }
-  return { kind: "unavailable", nodeNames: checkouts.map((node) => node.nodeName) };
+  // Machines with a linked T3 but no Hub are known only from `hosts`.
+  const hubNodes = new Set(view.nodes.map((node) => node.nodeName));
+  return {
+    kind: "unavailable",
+    nodeNames: [
+      ...checkouts.map((node) => node.nodeName),
+      ...Object.keys(view.project.hosts).filter((nodeName) => !hubNodes.has(nodeName)),
+    ],
+  };
 }
 
 /**

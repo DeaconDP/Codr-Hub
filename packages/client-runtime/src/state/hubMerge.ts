@@ -16,8 +16,8 @@ export type HubMergedProjectsLive = {
   /** First successful snapshot, for strategy labels if the chosen env is down. */
   readonly anySnapshot: HubSnapshot | null;
   /**
-   * Hub node name each answering environment reports, then each node's linked stock T3
-   * (`t3Sync.t3EnvironmentId`), for linking T3 projects by path. Hub environments come first,
+   * Hub node name each answering environment reports, then the node name of each linked stock
+   * T3 a Hub read (`t3Sync.t3Sources`), for linking T3 projects by path. Hub environments come first,
    * so the first id per node name is the one that answers Hub writes.
    */
   readonly nodeNameByEnvironmentId: ReadonlyMap<EnvironmentId, string>;
@@ -95,9 +95,10 @@ export function createHubMergedProjectsAtomFamily(
         }
       }
       for (const value of snapshots) {
-        const t3EnvironmentId = value.t3Sync?.t3EnvironmentId;
-        if (t3EnvironmentId != null && !nodeNameByEnvironmentId.has(t3EnvironmentId)) {
-          nodeNameByEnvironmentId.set(t3EnvironmentId, value.nodeName);
+        for (const source of value.t3Sync?.t3Sources ?? []) {
+          if (!nodeNameByEnvironmentId.has(source.environmentId)) {
+            nodeNameByEnvironmentId.set(source.environmentId, source.nodeName);
+          }
         }
       }
       return {

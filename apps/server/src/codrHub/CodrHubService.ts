@@ -120,8 +120,8 @@ import {
   pickNextProject,
   stageLabel,
 } from "./selection.ts";
-import { mergeT3Import, planT3Creates } from "./t3Import.ts";
-import { listLinkedT3Projects, pickT3Source } from "./t3Source.ts";
+import { mergeT3Import, planT3Creates, type T3ProjectInput } from "./t3Import.ts";
+import { listLinkedT3Projects, pickT3Source, remoteT3Links } from "./t3Source.ts";
 import { ownerTryStage, reduceTestHandoff } from "./testHandoff.ts";
 
 const AUTOPILOT_EVERY_MS = 60_000;
@@ -302,7 +302,7 @@ export const layer = Layer.effect(
       lastSyncAt: null,
       lastResult: null,
       lastError: null,
-      t3EnvironmentId: null,
+      t3Sources: [],
     });
     const noteRef = yield* Ref.make<string | null>(null);
     const timersRef = yield* Ref.make({ autopilot: 0, glance: 0, sync: 0, refresh: 0, t3: 0 });
@@ -1089,12 +1089,8 @@ export const layer = Layer.effect(
       return true;
     });
 
-    /** The linked T3 to read, or null for this server's own projects. */
-    const t3SourceEnvironment = Effect.fn("codrHub.t3SourceEnvironment")(function* (
-      node: Store.NodeFile,
-    ) {
-      const source = node.t3Source ?? "auto";
-      if (source !== "auto") return pickT3Source(source, []);
+    /** This node's linked T3 (null for this server's own projects), and other machines' T3s. */
+    const t3SourceLinks = Effect.fn("codrHub.t3SourceLinks")(function* (node: Store.NodeFile) {
       const links = yield* peerLinks.list.pipe(
         Effect.catch((cause) =>
           Effect.logWarning("Codr-Hub could not list linked environments", { cause }).pipe(
@@ -1102,20 +1098,31 @@ export const layer = Layer.effect(
           ),
         ),
       );
-      return pickT3Source(source, links);
+      const own = pickT3Source(node.t3Source ?? "auto", links);
+      const remotes = remoteT3Links(links, own).map((link) => ({
+        environmentId: link.environmentId,
+        nodeName: link.label.trim() || link.environmentId,
+      }));
+      return { own, remotes };
     });
 
     /**
-     * Brings this node's T3 projects into the portfolio and, with `toT3`, adds
-     * this node's Hub checkouts to T3. Never deletes on either side. Read from
-     * a linked T3, the Hub never writes to it. Callers hold writeLock.
+     * Brings this node's T3 projects, and other machines' linked T3 projects, into the portfolio
+     * and, with `toT3`, adds this node's Hub checkouts to this server's T3. Never deletes on
+     * either side, and never writes to a linked T3. Callers hold writeLock.
      */
     const syncWithT3 = Effect.fn("codrHub.syncWithT3")(
       function* (options: { readonly toT3: boolean }) {
         const node = yield* Ref.get(nodeRef);
         const existing = [...(yield* Ref.get(projectsRef)).values()];
-        const t3EnvironmentId = yield* t3SourceEnvironment(node);
-        yield* Ref.update(t3SyncRef, (state) => ({ ...state, t3EnvironmentId }));
+        const { own: t3EnvironmentId, remotes } = yield* t3SourceLinks(node);
+        const t3Sources = [
+          ...(t3EnvironmentId === null
+            ? []
+            : [{ environmentId: t3EnvironmentId, nodeName: node.nodeName }]),
+          ...remotes,
+        ];
+        yield* Ref.update(t3SyncRef, (state) => ({ ...state, t3Sources }));
         const shells =
           t3EnvironmentId === null
             ? yield* projectsService
@@ -1143,18 +1150,46 @@ export const layer = Layer.effect(
           }
         }
         const now = yield* nowIso;
-        const merged = mergeT3Import(existing, shells, {
-          nodeName: node.nodeName,
-          nowIso: now,
-          missingPathIds,
+        const totals = { imported: 0, updated: 0, skipped: 0 };
+        const importFrom = Effect.fn("codrHub.importT3Node")(function* (
+          nodeName: string,
+          t3Projects: ReadonlyArray<T3ProjectInput>,
+          missing: ReadonlySet<string>,
+        ) {
+          const merged = mergeT3Import([...(yield* Ref.get(projectsRef)).values()], t3Projects, {
+            nodeName,
+            nowIso: now,
+            missingPathIds: missing,
+          });
+          totals.imported += merged.imported;
+          totals.updated += merged.updated;
+          totals.skipped += merged.skipped;
+          if (merged.upserts.length > 0) {
+            yield* write(
+              `Import ${merged.imported} new, ${merged.updated} linked projects from T3 on ${nodeName}`,
+              Effect.forEach(merged.upserts, saveProject, { discard: true }),
+            );
+          }
+          return merged.upserts.length > 0;
         });
-        if (merged.upserts.length > 0) {
-          yield* write(
-            `Import ${merged.imported} new, ${merged.updated} linked projects from T3 on ${node.nodeName}`,
-            Effect.forEach(merged.upserts, saveProject, { discard: true }),
-          );
-          yield* refreshGlances;
+        let changed = yield* importFrom(node.nodeName, shells, missingPathIds);
+        // Other machines' paths can't be checked from here, and one unreachable machine
+        // must not hold back the rest.
+        const remoteReads = yield* Effect.forEach(
+          remotes,
+          (remote) => Effect.result(listLinkedT3Projects(peerClient, remote.environmentId)),
+          { concurrency: "unbounded" },
+        );
+        const remoteErrors: string[] = [];
+        for (const [index, remote] of remotes.entries()) {
+          const read = remoteReads[index]!;
+          if (read._tag === "Failure") {
+            remoteErrors.push(`${remote.nodeName}: ${read.failure.message}`);
+          } else if (yield* importFrom(remote.nodeName, read.success, new Set())) {
+            changed = true;
+          }
         }
+        if (changed) yield* refreshGlances;
         let created = 0;
         const failures: string[] = [];
         if (options.toT3 && t3EnvironmentId === null) {
@@ -1169,17 +1204,16 @@ export const layer = Layer.effect(
             else if (result.success) created += 1;
           }
         }
-        const result = {
-          imported: merged.imported,
-          updated: merged.updated,
-          skipped: merged.skipped,
-          created,
-        };
+        const result = { ...totals, created };
+        const errors = [
+          ...remoteErrors,
+          ...(failures.length === 0 ? [] : [`Not added to T3: ${failures.join("; ")}`]),
+        ];
         yield* Ref.set(t3SyncRef, {
-          t3EnvironmentId,
+          t3Sources,
           lastSyncAt: now,
           lastResult: result,
-          lastError: failures.length === 0 ? null : `Not added to T3: ${failures.join("; ")}`,
+          lastError: errors.length === 0 ? null : errors.join(" · "),
         });
         yield* notify;
         return result;
@@ -1834,9 +1868,10 @@ export const layer = Layer.effect(
       }
       if (now - timers.t3 >= LINKED_T3_EVERY_MS) {
         yield* Ref.update(timersRef, (t) => ({ ...t, t3: now }));
-        if (node.syncT3 === true && node.t3Source !== "local") {
-          yield* Queue.offer(t3Wake, undefined);
-        }
+        // Linked T3s send no project events, so they are re-read on this tick.
+        const readsLinked =
+          node.t3Source !== "local" || ((yield* Ref.get(t3SyncRef)).t3Sources?.length ?? 0) > 0;
+        if (node.syncT3 === true && readsLinked) yield* Queue.offer(t3Wake, undefined);
       }
       if (now - timers.sync >= SYNC_EVERY_MS) {
         yield* Ref.update(timersRef, (t) => ({ ...t, sync: now }));

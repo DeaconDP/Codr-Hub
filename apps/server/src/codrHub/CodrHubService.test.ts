@@ -16,6 +16,7 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import {
   type ApplicationStoredEvent,
   EnvironmentId,
+  type HubProject,
   type OrchestrationProjectShell,
   OrchestratorMcpFailure,
   type PeerLinkSummary,
@@ -333,7 +334,7 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
-  it.effect("reads a linked T3 on this machine without writing to it", () =>
+  it.effect("reads every linked T3 without writing to it, this machine's as this node", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -341,10 +342,11 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
       const checkout = path.join(baseDir, "hub-only");
       yield* fs.makeDirectory(checkout, { recursive: true });
       const stockT3 = EnvironmentId.make("stock-t3");
+      const unityT3 = EnvironmentId.make("unity-t3");
       const at = DateTime.makeUnsafe("2026-11-01T00:00:00.000Z");
-      const link = (environmentId: EnvironmentId, url: string): PeerLinkSummary => ({
+      const link = (environmentId: EnvironmentId, label: string, url: string): PeerLinkSummary => ({
         environmentId,
-        label: environmentId,
+        label,
         urls: [url],
         access: "read-only",
         linkedAt: at,
@@ -358,22 +360,30 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
         workspaceRoot,
         repositoryIdentity: null,
       });
-      const pages = [
-        { projects: [project("Alpha", "/work/alpha")], nextCursor: 1 },
-        { projects: [project("Beta", "/work/beta")], nextCursor: null },
-      ];
-      let reachable = true;
+      const pages: Record<string, Array<{ projects: unknown[]; nextCursor: number | null }>> = {
+        [stockT3]: [
+          { projects: [project("Alpha", "/work/alpha")], nextCursor: 1 },
+          { projects: [project("Beta", "/work/beta")], nextCursor: null },
+        ],
+        [unityT3]: [
+          {
+            projects: [project("Alpha", "D:/work/alpha"), project("Gamma", "D:/work/gamma")],
+            nextCursor: null,
+          },
+        ],
+      };
+      const down = new Set<string>();
       const tools: string[] = [];
       const call: PeerMcpClient.PeerMcpClient["Service"]["call"] = (input) => {
         tools.push(`${input.environmentId} ${input.tool} ${String(input.arguments.cursor)}`);
-        return reachable
-          ? Effect.succeed(pages[input.arguments.cursor as number] as never)
-          : Effect.fail(
+        return down.has(input.environmentId)
+          ? Effect.fail(
               new OrchestratorMcpFailure({
                 code: "orchestration_error",
                 message: "The linked environment stopped answering.",
               }),
-            );
+            )
+          : Effect.succeed(pages[input.environmentId]![input.arguments.cursor as number] as never);
       };
       const projects: Partial<ProjectService.ProjectService["Service"]> = {
         listShells: () => Effect.die("read the local T3 instead of the linked one"),
@@ -382,6 +392,7 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
       };
       yield* Effect.gen(function* () {
         const hub = yield* Hub.CodrHubService;
+        yield* hub.setNode({ nodeName: "Steve" });
         yield* hub.upsertProject({ name: "Hub Only", localPath: checkout });
         yield* hub.setNode({ syncT3: true });
         const synced = yield* hub.subscribe().pipe(
@@ -391,29 +402,58 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
         );
         expect(synced.t3Sync).toMatchObject({
           source: "auto",
-          t3EnvironmentId: stockT3,
+          t3Sources: [
+            { environmentId: stockT3, nodeName: "Steve" },
+            { environmentId: unityT3, nodeName: "EpicUnityPC" },
+          ],
           lastError: null,
-          lastResult: { imported: 2, updated: 0, skipped: 0, created: 0 },
+          lastResult: { imported: 3, updated: 1, skipped: 0, created: 0 },
         });
-        expect(tools).toEqual(["stock-t3 t3_project_list 0", "stock-t3 t3_project_list 1"]);
+        expect(tools).toEqual([
+          "stock-t3 t3_project_list 0",
+          "stock-t3 t3_project_list 1",
+          "unity-t3 t3_project_list 0",
+        ]);
+        const hostsOf = (saved: ReadonlyArray<HubProject>, id: string) =>
+          Object.fromEntries(
+            Object.entries(saved.find((entry) => entry.id === id)?.hosts ?? {}).map(
+              ([nodeName, host]) => [nodeName, host.path],
+            ),
+          );
+        const saved = yield* Store.readProjects(paths);
+        expect(hostsOf(saved, "alpha")).toEqual({
+          Steve: "/work/alpha",
+          EpicUnityPC: "D:/work/alpha",
+        });
+        expect(hostsOf(saved, "gamma")).toEqual({ EpicUnityPC: "D:/work/gamma" });
 
-        reachable = false;
+        // One unreachable machine is reported without holding back this node's T3.
+        down.add(unityT3);
+        pages[stockT3]![1]!.projects.push(project("Delta", "/work/delta"));
+        const partial = yield* hub.importProjects({ source: "t3" });
+        expect(partial).toMatchObject({ imported: 1 });
+        expect((yield* snapshot(hub)).t3Sync?.lastError).toBe(
+          "EpicUnityPC: The linked environment stopped answering.",
+        );
+        expect(hostsOf(yield* Store.readProjects(paths), "delta")).toEqual({
+          Steve: "/work/delta",
+        });
+
+        down.add(stockT3);
         const before = yield* Store.readProjects(paths);
+        const lastResult = (yield* snapshot(hub)).t3Sync?.lastResult;
         const failure = yield* hub.importProjects({ source: "t3" }).pipe(Effect.flip);
         const message =
           "Could not reach this machine's T3 (The linked environment stopped answering.)";
         expect(failure.message).toBe(message);
-        expect((yield* snapshot(hub)).t3Sync).toMatchObject({
-          lastError: message,
-          lastResult: synced.t3Sync?.lastResult,
-        });
+        expect((yield* snapshot(hub)).t3Sync).toMatchObject({ lastError: message, lastResult });
         expect(yield* Store.readProjects(paths)).toEqual(before);
       }).pipe(
         Effect.provide(
           serviceLayer(baseDir, projects, Stream.never, {
             links: [
-              link(stockT3, "http://127.0.0.1:3773"),
-              link(EnvironmentId.make("vps"), "https://vps.example.ts.net"),
+              link(stockT3, "MacBook Pro", "http://127.0.0.1:3773"),
+              link(unityT3, "EpicUnityPC", "https://epicunitypc.example.ts.net"),
             ],
             call,
           }),
