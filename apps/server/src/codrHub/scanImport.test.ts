@@ -233,6 +233,54 @@ describe("codr-hub scan import", () => {
       context,
     );
     expect(windows).toMatchObject({ created: 0, matched: 1 });
+    // A checkout stored through a symlink is the scanned folder, not another copy.
+    const linked = hub({ name: "Linked", localPath: "/Users/epic/Projects/Linked" });
+    const viaLink = mergeScanImport(
+      [linked],
+      [row({ name: "Linked", path: "/w/Private/Linked", dirty: 4 })],
+      {
+        ...context,
+        realPaths: new Map([["Steve\0/Users/epic/Projects/Linked", "/w/Private/Linked"]]),
+      },
+    );
+    expect(viaLink.upserts[0]?.hosts.Steve).toEqual({
+      path: "/Users/epic/Projects/Linked",
+      stickyPort: null,
+      launchCmd: null,
+      scan: expect.objectContaining({ dirty: 4 }),
+    });
+  });
+
+  it("does not trust a repo URL that the project's own checkout contradicts", () => {
+    const fork = {
+      ...hub({ name: "Codr-Hub", localPath: "/w/Codr-Hub" }),
+      repoUrl: "https://github.com/pingdotgg/t3code.git",
+    };
+    const result = mergeScanImport(
+      [fork],
+      [
+        row({
+          name: "t3code",
+          path: "/w/External/t3code",
+          remote: "https://github.com/pingdotgg/t3code.git",
+          flags: ["third-party"],
+        }),
+        row({
+          name: "Codr-Hub",
+          path: "/w/Codr-Hub",
+          remote: "https://github.com/DeaconDP/Codr-Hub",
+        }),
+      ],
+      context,
+    );
+    expect(result).toMatchObject({ created: 1, matched: 1 });
+    expect(result.upserts.map((project) => [project.id, project.hosts.Steve?.path])).toEqual([
+      ["codr-hub", "/w/Codr-Hub"],
+      ["t3code", "/w/External/t3code"],
+    ]);
+    expect(result.ambiguous).toEqual([
+      "Codr-Hub: its repo URL is https://github.com/pingdotgg/t3code.git but the folder's remote is https://github.com/DeaconDP/Codr-Hub. Check the repo URL.",
+    ]);
   });
 
   it("moves a checkout whose folder is gone, and ignores an older scan", () => {

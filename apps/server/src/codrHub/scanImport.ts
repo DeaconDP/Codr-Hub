@@ -129,6 +129,8 @@ export function mergeScanImport(
     readonly nodeOf: (row: ScanRow) => string;
     /** Existing project ids whose checkout on that node no longer exists, keyed `${node}\0${id}`. */
     readonly missingPaths?: ReadonlySet<string>;
+    /** Symlink-resolved paths, keyed `${node}\0${path}`, so a linked folder is the same checkout. */
+    readonly realPaths?: ReadonlyMap<string, string>;
   },
 ): ScanMergeResult {
   const byId = new Map(existing.map((project) => [project.id, project]));
@@ -140,6 +142,8 @@ export function mergeScanImport(
   let hostsAdded = 0;
   let skipped = 0;
   const touchedHosts = new Set<string>();
+  const keyOf = (node: string, path: string) =>
+    pathKey(context.realPaths?.get(`${node}\0${path}`) ?? path);
 
   // Group rows: by remote, else by name.
   const groups = new Map<string, ScanRow[]>();
@@ -178,25 +182,45 @@ export function mergeScanImport(
     for (const row of group) units.push(toUnit([row], true));
   }
 
-  const findExisting = (unit: Unit): HubProject | undefined | "ambiguous" => {
+  const byPath = (unit: Unit): HubProject | undefined => {
     const projects = [...byId.values()];
     for (const [node, list] of unit.byNode) {
-      const keys = new Set(list.map((row) => pathKey(row.path)));
+      const keys = new Set(list.map((row) => keyOf(node, row.path)));
       const hit = projects.find((project) => {
         const host = project.hosts[node];
         return (
           host !== undefined &&
-          (keys.has(pathKey(host.path)) ||
-            (host.otherCheckouts ?? []).some((other) => keys.has(pathKey(other.path))))
+          (keys.has(keyOf(node, host.path)) ||
+            (host.otherCheckouts ?? []).some((other) => keys.has(keyOf(node, other.path))))
         );
       });
       if (hit !== undefined) return hit;
     }
-    if (unit.pathOnly) return undefined;
+    return undefined;
+  };
+
+  /** A repo URL that the project's own scanned checkouts disagree with can't be trusted. */
+  const contradicted = (project: HubProject) =>
+    Object.values(project.hosts).some(
+      (host) => host.scan?.remote != null && repoKey(host.scan.remote) !== repoKey(project.repoUrl),
+    );
+
+  const findExisting = (unit: Unit): HubProject | undefined | "ambiguous" => {
+    const projects = [...byId.values()];
     const repo = repoKey(unit.remote);
+    const hit = byPath(unit);
+    if (hit !== undefined) {
+      if (repo !== null && hit.repoUrl !== null && repoKey(hit.repoUrl) !== repo) {
+        ambiguous.push(
+          `${hit.name}: its repo URL is ${hit.repoUrl} but the folder's remote is ${unit.remote}. Check the repo URL.`,
+        );
+      }
+      return hit;
+    }
+    if (unit.pathOnly) return undefined;
     if (repo !== null) {
       const sameRepo = projects
-        .filter((project) => repoKey(project.repoUrl) === repo)
+        .filter((project) => repoKey(project.repoUrl) === repo && !contradicted(project))
         .sort((a, b) => a.sortIndex - b.sortIndex);
       if (sameRepo.length > 1) {
         ambiguous.push(
@@ -233,7 +257,7 @@ export function mergeScanImport(
       projectId !== null && context.missingPaths?.has(`${node}\0${projectId}`) === true;
     const keep = current !== undefined && !missing;
     const path = keep ? current.path : list[0]!.path;
-    const here = list.find((row) => pathKey(row.path) === pathKey(path));
+    const here = list.find((row) => keyOf(node, row.path) === keyOf(node, path));
     const fresh = list
       .filter((row) => row !== here)
       .map((row) => ({ path: row.path, scan: scanFacts(row) }));
@@ -242,7 +266,7 @@ export function mergeScanImport(
     const others: HubOtherCheckout[] = touched
       ? [
           ...(current?.otherCheckouts ?? []).filter(
-            (other) => !fresh.some((row) => pathKey(row.path) === pathKey(other.path)),
+            (other) => !fresh.some((row) => keyOf(node, row.path) === keyOf(node, other.path)),
           ),
           ...fresh,
         ]
@@ -266,7 +290,12 @@ export function mergeScanImport(
     };
   };
 
-  for (const unit of units) {
+  // Folders already linked by path go first, so their remotes are known before remote matching.
+  const ordered = [
+    ...units.filter((unit) => byPath(unit) !== undefined),
+    ...units.filter((unit) => byPath(unit) === undefined),
+  ];
+  for (const unit of ordered) {
     const found = findExisting(unit);
     const rowCount = [...unit.byNode.values()].flat().length;
     if (found === "ambiguous") {

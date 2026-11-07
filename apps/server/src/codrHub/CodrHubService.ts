@@ -1415,20 +1415,33 @@ export const layer = Layer.effect(
         knownNodes,
       });
       if ("error" in resolved) return yield* new HubError({ message: resolved.error });
-      // Only this machine can tell whether a stored checkout still exists.
+      // Only this machine can tell whether a stored checkout still exists, or where a link points.
       const missingPaths = new Set<string>();
+      const realPaths = new Map<string, string>();
       if ([...resolved.nodes.values()].includes(node.nodeName)) {
+        const real = (folder: string) =>
+          fs.realPath(folder).pipe(
+            Effect.map((resolvedPath) => {
+              realPaths.set(`${node.nodeName}\0${folder}`, resolvedPath);
+              return true;
+            }),
+            Effect.orElseSucceed(() => false),
+          );
         for (const project of existing) {
           const host = project.hosts[node.nodeName];
-          if (host && !(yield* fs.exists(host.path).pipe(Effect.orElseSucceed(() => false)))) {
-            missingPaths.add(`${node.nodeName}\0${project.id}`);
-          }
+          if (host === undefined) continue;
+          if (!(yield* real(host.path))) missingPaths.add(`${node.nodeName}\0${project.id}`);
+          for (const other of host.otherCheckouts ?? []) yield* real(other.path);
+        }
+        for (const row of parsed.rows) {
+          if (resolved.nodes.get(row.nickname) === node.nodeName) yield* real(row.path);
         }
       }
       const merged = mergeScanImport(existing, parsed.rows, {
         nowIso: yield* nowIso,
         nodeOf: (row) => resolved.nodes.get(row.nickname)!,
         missingPaths,
+        realPaths,
       });
       if (input.dryRun !== true && merged.upserts.length > 0) {
         const machines = [...new Set(resolved.nodes.values())].join(", ");
