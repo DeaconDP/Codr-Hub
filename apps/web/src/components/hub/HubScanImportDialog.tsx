@@ -1,8 +1,14 @@
+import {
+  runScanAll,
+  type ScanAllLine,
+  type ScanAllPlan,
+} from "@t3tools/client-runtime/codrHub/scanAllMachines";
 import { scanImportSummary } from "@t3tools/client-runtime/codrHub/scanAttention";
 import type { EnvironmentId, HubImportResult } from "@t3tools/contracts";
 import { useId, useState } from "react";
 
 import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -19,15 +25,19 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { useHubAction } from "./useHubAction";
 
-type Source = "file" | "path" | "scan";
+type Source = "file" | "path" | "scan" | "all";
 const FROM_FILE = "";
 
-/** Import a workshop scan TSV: an uploaded file, a file on the machine, or a fresh scan of it. */
+/**
+ * Import a workshop scan TSV: an uploaded file, a file on the machine, a fresh scan of it, or a
+ * fresh scan of every connected machine.
+ */
 export function HubScanImportDialog(props: {
   readonly environmentId: EnvironmentId;
   /** The machine the selected environment runs on. */
   readonly nodeName: string;
   readonly knownNodes: ReadonlyArray<string>;
+  readonly scanAllPlan: ScanAllPlan;
   readonly onClose: () => void;
 }) {
   const formId = useId();
@@ -37,14 +47,35 @@ export function HubScanImportDialog(props: {
   const [path, setPath] = useState("");
   const [machine, setMachine] = useState(FROM_FILE);
   const [result, setResult] = useState<HubImportResult | null>(null);
+  const [allLines, setAllLines] = useState<ReadonlyArray<ScanAllLine> | null>(null);
+  const [allBusy, setAllBusy] = useState(false);
+  const importScan = useAtomCommand(serverEnvironment.hubImport, { reportFailure: false });
   const action = useHubAction(
     serverEnvironment.hubImport,
     props.environmentId,
     "Could not import the scan",
   );
 
-  const ready = source === "file" ? text !== null : source === "path" ? path.trim() !== "" : true;
+  const busy = action.busy || allBusy;
+  const ready =
+    source === "file"
+      ? text !== null
+      : source === "path"
+        ? path.trim() !== ""
+        : source === "all"
+          ? props.scanAllPlan.targets.length > 0
+          : true;
+  const scanAll = async (dryRun: boolean) => {
+    setAllBusy(true);
+    setAllLines(null);
+    const lines = await runScanAll(props.scanAllPlan, ({ environmentId }) =>
+      importScan({ environmentId, input: { source: "scan", scanThisMachine: true, dryRun } }),
+    );
+    setAllBusy(false);
+    setAllLines(lines);
+  };
   const run = async (dryRun: boolean) => {
+    if (source === "all") return scanAll(dryRun);
     const from =
       source === "file"
         ? { text: text ?? "" }
@@ -78,15 +109,17 @@ export function HubScanImportDialog(props: {
               value={[source]}
               onValueChange={(next) => {
                 const value = next[0];
-                if (value === "file" || value === "path" || value === "scan") {
+                if (value === "file" || value === "path" || value === "scan" || value === "all") {
                   setSource(value);
                   setResult(null);
+                  setAllLines(null);
                 }
               }}
             >
               <Toggle value="file">File</Toggle>
               <Toggle value="path">Path on {props.nodeName}</Toggle>
               <Toggle value="scan">Scan {props.nodeName}</Toggle>
+              <Toggle value="all">All machines</Toggle>
             </ToggleGroup>
             {source === "file" ? (
               <div className="flex flex-col gap-1.5">
@@ -124,42 +157,69 @@ export function HubScanImportDialog(props: {
                   }}
                 />
               </div>
+            ) : source === "all" ? (
+              <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
+                <p>
+                  {props.scanAllPlan.targets.length === 0
+                    ? "No connected machine runs Codr-Hub."
+                    : `Scans the disks of every connected machine at once (${props.scanAllPlan.targets
+                        .map((target) => target.nodeName)
+                        .join(
+                          ", ",
+                        )}) with each one's scan settings, then imports the results. This can take several minutes.`}
+                </p>
+                <p>Each machine needs an up-to-date Codr-Hub.</p>
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">
                 Scans {props.nodeName}'s Workshop folder and any folders in its scan settings, then
                 imports the result. Large folders can take a few minutes.
               </p>
             )}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor={`${formId}-machine`}>Machine</Label>
-              <Select
-                value={machine}
-                onValueChange={(next) => {
-                  setMachine(typeof next === "string" ? next : FROM_FILE);
-                  setResult(null);
-                }}
-              >
-                <SelectTrigger id={`${formId}-machine`}>
-                  <SelectValue>
-                    {machine === FROM_FILE
-                      ? source === "scan"
-                        ? props.nodeName
-                        : "From the file's nickname column"
-                      : machine}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup>
-                  <SelectItem value={FROM_FILE}>
-                    {source === "scan" ? props.nodeName : "From the file's nickname column"}
-                  </SelectItem>
-                  {props.knownNodes.map((node) => (
-                    <SelectItem key={node} value={node}>
-                      {node}
+            {source === "all" ? null : (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor={`${formId}-machine`}>Machine</Label>
+                <Select
+                  value={machine}
+                  onValueChange={(next) => {
+                    setMachine(typeof next === "string" ? next : FROM_FILE);
+                    setResult(null);
+                  }}
+                >
+                  <SelectTrigger id={`${formId}-machine`}>
+                    <SelectValue>
+                      {machine === FROM_FILE
+                        ? source === "scan"
+                          ? props.nodeName
+                          : "From the file's nickname column"
+                        : machine}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    <SelectItem value={FROM_FILE}>
+                      {source === "scan" ? props.nodeName : "From the file's nickname column"}
                     </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            </div>
+                    {props.knownNodes.map((node) => (
+                      <SelectItem key={node} value={node}>
+                        {node}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </div>
+            )}
+            {allLines ? (
+              <ul role="status" className="flex flex-col gap-2 text-sm">
+                {allLines.map((line) => (
+                  <li key={line.nodeName}>
+                    <span className="font-medium text-foreground">{line.nodeName}: </span>
+                    <span className={line.ok ? "text-foreground" : "text-muted-foreground"}>
+                      {line.text}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {result ? (
               <div role="status" className="flex flex-col gap-2 text-sm">
                 <p className="text-foreground">{scanImportSummary(result)}</p>
@@ -176,23 +236,23 @@ export function HubScanImportDialog(props: {
         </DialogPanel>
         <DialogFooter>
           <Button size="sm" variant="ghost" onClick={props.onClose}>
-            {result && !result.dryRun ? "Done" : "Cancel"}
+            {(result && !result.dryRun) || allLines ? "Done" : "Cancel"}
           </Button>
           <Button
             size="sm"
             variant="outline"
-            disabled={!ready || action.busy}
+            disabled={!ready || busy}
             onClick={() => void run(true)}
           >
             Preview
           </Button>
           <Button
             size="sm"
-            disabled={!ready || action.busy}
-            aria-busy={action.busy}
+            disabled={!ready || busy}
+            aria-busy={busy}
             onClick={() => void run(false)}
           >
-            {action.busy ? "Working…" : "Import"}
+            {busy ? "Working…" : source === "all" ? "Scan all machines" : "Import"}
           </Button>
         </DialogFooter>
       </DialogPopup>

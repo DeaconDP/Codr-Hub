@@ -94,6 +94,11 @@
       "import": "./src/codrHub/scanAttention.ts",
       "default": "./src/codrHub/scanAttention.ts"
     },
+    "./codrHub/scanAllMachines": {
+      "types": "./src/codrHub/scanAllMachines.ts",
+      "import": "./src/codrHub/scanAllMachines.ts",
+      "default": "./src/codrHub/scanAllMachines.ts"
+    },
     "./codrHub/projectPickerModel": {
       "types": "./src/codrHub/projectPickerModel.ts",
       "import": "./src/codrHub/projectPickerModel.ts",

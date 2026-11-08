@@ -26,6 +26,7 @@ import { HubBuildStamp } from "./HubBuildStamp";
 import { hubProjectMenuActions, hubProjectPatchForAction } from "./hubProjectMenu";
 import { HubOverviewView } from "./HubOverviewView";
 import { HubMachinePace } from "./HubPaceView";
+import { HubScanAllButton } from "./HubScanAllButton";
 import { HubStagesView } from "./HubStagesView";
 import { useConnectedHubMachines, useHubPortfolio } from "./useHubPortfolio";
 import { useHubProjectEdits } from "./useHubProjectEdits";
@@ -84,8 +85,9 @@ export function HubRouteScreen() {
           <EmptyState
             variant="plain"
             title="No projects yet"
-            detail="Import your projects from Hub in the web app, or turn on Sync with T3 there."
+            detail="Scan all machines to add their projects, import them from Hub in the web app, or turn on Sync with T3 there."
           />
+          <HubScanAllButton portfolio={portfolio} />
         </HubScroll>
       ) : view === "pace" ? (
         <HubScroll bottomInset={insets.bottom}>
@@ -355,6 +357,7 @@ function ProjectList(props: {
           </Text>
         </Pressable>
       ) : null}
+      {favoritesOnly ? null : <HubScanAllButton portfolio={portfolio} />}
     </View>
   );
 }

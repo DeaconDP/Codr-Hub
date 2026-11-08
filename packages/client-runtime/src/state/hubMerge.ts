@@ -21,6 +21,8 @@ export type HubMergedProjectsLive = {
    * so the first id per node name is the one that answers Hub writes.
    */
   readonly nodeNameByEnvironmentId: ReadonlyMap<EnvironmentId, string>;
+  /** Environments that answered with a Hub snapshot, unlike the stock T3 ones above. */
+  readonly hubEnvironmentIds: ReadonlyArray<EnvironmentId>;
   /** First failure. Others may still have answered — this is not fatal. */
   readonly error: string | null;
   readonly isPending: boolean;
@@ -30,6 +32,7 @@ const EMPTY_MERGED: HubMergedProjectsLive = {
   projects: [],
   anySnapshot: null,
   nodeNameByEnvironmentId: new Map(),
+  hubEnvironmentIds: [],
   error: null,
   isPending: false,
 };
@@ -94,6 +97,7 @@ export function createHubMergedProjectsAtomFamily(
           error = formatMergeError(result.cause);
         }
       }
+      const hubEnvironmentIds = [...nodeNameByEnvironmentId.keys()];
       for (const value of snapshots) {
         for (const source of value.t3Sync?.t3Sources ?? []) {
           if (!nodeNameByEnvironmentId.has(source.environmentId)) {
@@ -105,6 +109,7 @@ export function createHubMergedProjectsAtomFamily(
         projects: mergeHubProjectViews(snapshots),
         anySnapshot: snapshots[0] ?? null,
         nodeNameByEnvironmentId,
+        hubEnvironmentIds,
         error,
         isPending,
       };

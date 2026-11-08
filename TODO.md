@@ -218,6 +218,7 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Server: pure `scanTsv.ts` / `scanImport.ts` (match by path, then remote, then a unique name; symlinked folders are one checkout; repo URLs a checkout contradicts are reported, not matched), `diskScan.ts` scanner, wired in `CodrHubService` (10 new server tests, 2 client-runtime)
 - [x] `npm run codr:scan` (`scripts/codr-hub-scan.ts`): bare Node scanner for macOS and Windows, roots from `codr-hub/scan.json`
 - [x] Web: **Import scan…** dialog with Preview; **Needs attention** filter; flag chips (at-risk red). Mobile: Needs attention and flags in Ranked / Favourites
+- [x] **Scan all machines** on demand: web (**Import scan… → All machines**) and phone (under Ranked), one line per machine; older Hubs show "needs the latest Codr-Hub", unconnected machines show as not reachable (`client-runtime/codrHub/scanAllMachines.ts`, 2 tests)
 - [x] Real import on Steve: 144 rows → 104 to 200 projects (96 new, 37 matched, 101 checkouts added), synced; re-run changes nothing
 - [ ] Owner: fix the **Codr-Hub** project's repo URL in the Hub (it says `pingdotgg/t3code`; the folder's remote is `DeaconDP/Codr-Hub`)
 - [ ] Owner (Luckey, Unity PC): copy `EPICUNITYPC-2026-11-06.tsv` from `\\edgar.local\Public\Workshop-Inventory\` to a machine with the Hub open, then Hub → **Import scan…** → **File**, **Machine: EpicUnityPC** → **Preview**, then **Import**

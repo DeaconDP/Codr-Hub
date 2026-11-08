@@ -31,6 +31,7 @@ import {
   t3SyncSummary,
   type HubProjectSort,
 } from "@t3tools/client-runtime/codrHub/hubFormat";
+import type { ScanAllPlan } from "@t3tools/client-runtime/codrHub/scanAllMachines";
 import { needsAttention, projectScanChips } from "@t3tools/client-runtime/codrHub/scanAttention";
 import { useHubAction } from "./useHubAction";
 
@@ -42,6 +43,7 @@ export function HubProjectsTable(props: {
   readonly snapshot: HubSnapshot;
   readonly projects: ReadonlyArray<HubMergedProjectView>;
   readonly selectedNodeName: string;
+  readonly scanAllPlan: ScanAllPlan;
 }) {
   const { snapshot, environmentId, projects, selectedNodeName } = props;
   const [query, setQuery] = useState("");
@@ -315,6 +317,7 @@ export function HubProjectsTable(props: {
           environmentId={environmentId}
           nodeName={selectedNodeName === "" ? snapshot.nodeName : selectedNodeName}
           knownNodes={knownNodes}
+          scanAllPlan={props.scanAllPlan}
           onClose={() => setImportingScan(false)}
         />
       ) : null}
