@@ -276,6 +276,23 @@ describe("codr-hub scan import", () => {
     ]);
   });
 
+  it("is a no-op on re-run when a path match and a name match land on one project", () => {
+    const enso = hub({ name: "Enso MobileVR", localPath: "/w/Enso" });
+    const rows = [
+      row({ name: "Enso", path: "/w/Enso" }),
+      row({ name: "Enso MobileVR", path: "/w/VR/Enso MobileVR", flags: ["duplicate"] }),
+    ];
+    const first = mergeScanImport([enso], rows, context);
+    expect(first.upserts[0]?.hosts.Steve).toMatchObject({
+      path: "/w/Enso",
+      otherCheckouts: [{ path: "/w/VR/Enso MobileVR" }],
+    });
+    expect(mergeScanImport(first.upserts, rows, context)).toMatchObject({
+      upserts: [],
+      updated: 0,
+    });
+  });
+
   it("moves a checkout whose folder is gone, and ignores an older scan", () => {
     const moved = hub({ name: "Gauge", localPath: "/old/Gauge" });
     const rows = [row({ name: "Gauge", path: "/new/Gauge", scanned: "2026-11-06" })];

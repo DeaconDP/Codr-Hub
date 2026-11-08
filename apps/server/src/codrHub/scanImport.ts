@@ -372,12 +372,21 @@ export function mergeScanImport(
     upserts.set(saved.id, saved);
   }
 
+  // Two row groups can land on one project and undo each other; that is not a change.
+  const original = new Map(existing.map((project) => [project.id, project]));
+  const changed = [...upserts.values()].filter((project) => {
+    const before = original.get(project.id);
+    return (
+      before === undefined ||
+      stable({ ...project, updatedAt: null }) !== stable({ ...before, updatedAt: null })
+    );
+  });
   return {
-    upserts: [...upserts.values()],
+    upserts: changed,
     rows: rows.length,
     created,
     matched,
-    updated: [...upserts.keys()].filter((id) => existingIds.has(id)).length,
+    updated: changed.filter((project) => existingIds.has(project.id)).length,
     hostsAdded,
     skipped,
     ambiguous,
