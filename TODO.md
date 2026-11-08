@@ -226,3 +226,14 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [ ] Owner: Scan all machines reaches only machines running a Codr-Hub server; the PCs need one (`npm run codr:always-on`) to be scanned from the Hub, or run `npm run codr:scan` there and import the file
 - [ ] Owner: on each PC with a Codr-Hub checkout, add `.t3/userdata/codr-hub/scan.json` with `"nickname"` set to its Hub name (`EpicUnityPC` / `EpicUnrealPC`) and its roots outside the Workshop (mark the Unity PC's failing D: root `"flags": ["at-risk"]`), run `npm run codr:scan`, and import the file it prints. Next time, **Import scan… → Scan** on that machine does both
 - [ ] Owner: open **Needs attention** on the phone and the web and check it matches the Sheet's Needs Attention tab
+
+## Inventory (stacked on Disk scan import)
+
+- [x] `client-runtime/codrHub/inventoryModel.ts`: checkout rows, per-machine cards, totals (projects and checkouts kept apart), lane × machine matrix, twelve-month activity, table filter and sort (4 tests)
+- [x] One attention rule set in `scanAttention.ts` (`checkoutIssues`), now matching the prototype: Archive folders only when at risk, no-remote only for Private / Public, Perforce counts as a remote (3 more cases)
+- [x] Web: **Hub → Inventory** (`/hub/inventory`): totals, machine cards (filter the list, **Import scan…** for unscanned machines), What needs attention, Lanes by machine, Last activity, All checkouts table with remembered filters, **Machine colours…** for every scanned machine
+- [x] Mobile: Hub **Overview** gains the totals, machine cards and attention list
+- [x] Browser pass on a copy of the 200-project portfolio: desktop and 390px, light and dark
+- [ ] Owner: open Hub → Inventory and compare it with `workshop-projects.html`; after importing the two PC scans, check their cards, the lane matrix and the activity chart
+- [ ] Owner: pick distinct **Machine colours…** for Steve, EpicUnityPC and EpicUnrealPC (they all default to violet)
+- [ ] Owner: on the iPhone, Hub → Overview: check the Inventory section

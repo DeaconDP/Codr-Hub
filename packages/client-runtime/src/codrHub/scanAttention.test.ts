@@ -53,6 +53,22 @@ describe("codr-hub scan attention", () => {
     expect(needsAttention(project({ Steve: local("Unity") }))).toBe(false);
     expect(needsAttention(project({ Steve: local("Web", "Archive") }))).toBe(false);
     expect(needsAttention(project({ Steve: local("Web") }))).toBe(true);
+    // Tools, assets and experiments under Other are not the owner's code.
+    expect(needsAttention(project({ Steve: local("Web", "Other") }))).toBe(false);
+    // Perforce is a remote; a git remote off GitHub still counts as one.
+    expect(
+      needsAttention(project({ Steve: host({ scan: scan({ remote: null, vcs: "perforce" }) }) })),
+    ).toBe(false);
+    // Folders filed under Archive only count when at risk.
+    expect(
+      needsAttention(
+        project({
+          Steve: host({
+            scan: scan({ category: "Archive", ahead: 3, dirty: 40, flags: ["duplicate"] }),
+          }),
+        }),
+      ),
+    ).toBe(false);
     expect(needsAttention(project({ Steve: host({}) }))).toBe(false);
     // An archived project shows up only when its copy is at risk.
     expect(needsAttention(project({ Steve: local("Web") }, true))).toBe(false);
