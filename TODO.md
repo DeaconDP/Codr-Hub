@@ -211,3 +211,18 @@ Active work for E1 (v0.1) and E2 (mesh hardening). Check items off as they land.
 - [x] Pace view per machine: pace bars, autopilot switch, Run once and Deploy reset, with confirmations for anything that starts agents or spends a reset
 - [ ] Owner: try the Hub tab on the iPhone against a Codr-Hub server
 - [ ] Android pass: no emulator is installed on Steve
+
+## Disk scan import
+
+- [x] Contracts: optional `scan` facts and `otherCheckouts` on `HubProjectHost`; `hub.import` source `scan` (text, path, or Scan this machine; machine; dry run) with created / matched / machine checkouts / skipped / ambiguous counts
+- [x] Server: pure `scanTsv.ts` / `scanImport.ts` (match by path, then remote, then a unique name; symlinked folders are one checkout; repo URLs a checkout contradicts are reported, not matched), `diskScan.ts` scanner, wired in `CodrHubService` (10 new server tests, 2 client-runtime)
+- [x] `npm run codr:scan` (`scripts/codr-hub-scan.ts`): bare Node scanner for macOS and Windows, roots from `codr-hub/scan.json`
+- [x] Web: **Import scan…** dialog with Preview; **Needs attention** filter; flag chips (at-risk red). Mobile: Needs attention and flags in Ranked / Favourites
+- [x] **Scan all machines** on demand: web (**Import scan… → All machines**) and phone (under Ranked), one line per machine; older Hubs show "needs the latest Codr-Hub", unconnected machines show as not reachable (`client-runtime/codrHub/scanAllMachines.ts`, 2 tests)
+- [x] Real import on Steve: 144 rows → 104 to 200 projects (96 new, 37 matched, 101 checkouts added), synced; re-run changes nothing
+- [ ] Owner: fix the **Codr-Hub** project's repo URL in the Hub (it says `pingdotgg/t3code`; the folder's remote is `DeaconDP/Codr-Hub`)
+- [x] Real import of the PC scans (sent over Taildrop by an agent on each PC): EpicUnityPC 216 rows (132 new, 73 matched), EpicUnrealPC 150 rows (115 new, 33 matched); portfolio 200 → 447 projects, 49 on several machines, synced; every re-run changes nothing
+- [ ] Owner: fix the **gutterbird** repo URL too (`deez-micro-sim` is its upstream; its origin is `DeaconDP/gutterbird`)
+- [ ] Owner: Scan all machines reaches only machines running a Codr-Hub server; the PCs need one (`npm run codr:always-on`) to be scanned from the Hub, or run `npm run codr:scan` there and import the file
+- [ ] Owner: on each PC with a Codr-Hub checkout, add `.t3/userdata/codr-hub/scan.json` with `"nickname"` set to its Hub name (`EpicUnityPC` / `EpicUnrealPC`) and its roots outside the Workshop (mark the Unity PC's failing D: root `"flags": ["at-risk"]`), run `npm run codr:scan`, and import the file it prints. Next time, **Import scan… → Scan** on that machine does both
+- [ ] Owner: open **Needs attention** on the phone and the web and check it matches the Sheet's Needs Attention tab

@@ -20,6 +20,8 @@ import {
   type HubStrategyPriority,
 } from "@t3tools/contracts";
 
+import { needsAttention } from "./scanAttention.ts";
+
 export const PRIORITY_OPTIONS: ReadonlyArray<{ value: HubPriority; label: string }> = [
   { value: "critical", label: "Critical" },
   { value: "high", label: "High" },
@@ -151,7 +153,7 @@ export function stageSelectValue(stage: HubSdlcStage, mode: HubSdlcMode): HubSdl
   return group?.stages[0] ?? stage;
 }
 
-export type HubProjectFilter = "open" | "all" | HubProjectStatus | "archived";
+export type HubProjectFilter = "open" | "all" | "attention" | HubProjectStatus | "archived";
 
 export const SORT_OPTIONS = [
   { value: "rank", label: "Rank" },
@@ -189,6 +191,8 @@ export function filterAndSortProjects(
         return project.archived;
       case "open":
         return !project.archived && project.status !== "done";
+      case "attention":
+        return needsAttention(project);
       default:
         return !project.archived && project.status === options.filter;
     }

@@ -80,12 +80,48 @@ export type HubLane = typeof HubLane.Type;
 export const HubJobKind = Schema.Literals(["dev", "edit", "writing", "image"]);
 export type HubJobKind = typeof HubJobKind.Type;
 
+/**
+ * One folder as the disk scan last saw it; machine facts that each newer scan replaces. Plain
+ * strings, so a new scanner value never makes a project file undecodable.
+ */
+export const HubCheckoutScan = Schema.Struct({
+  /** YYYY-MM-DD */
+  scannedAt: Schema.String,
+  /** Private / Public / Other / Archive */
+  category: Schema.String,
+  /** Engine or platform lane (Unity, VRChat, Unreal, Web, …); not the Hub's `HubLane`. */
+  engine: Schema.String,
+  /** github / edgar / git-local / perforce / none */
+  vcs: Schema.String,
+  remote: NullString,
+  branch: NullString,
+  ahead: NullInt,
+  behind: NullInt,
+  dirty: NullInt,
+  /** YYYY-MM-DD */
+  lastActivity: NullString,
+  sizeGb: Schema.NullOr(Schema.Number).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  /** duplicate, copy, half-copy, backup, at-risk, outside-workshop, third-party, legacy-path, stale-scan */
+  flags: Schema.Array(Schema.String),
+});
+export type HubCheckoutScan = typeof HubCheckoutScan.Type;
+
+export const HubOtherCheckout = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  scan: HubCheckoutScan,
+});
+export type HubOtherCheckout = typeof HubOtherCheckout.Type;
+
 export const HubProjectHost = Schema.Struct({
   path: TrimmedNonEmptyString,
   /** Dev server port on this node only; meaningless on other machines. */
   stickyPort: NullInt,
   /** Rebuild/run hint for this node's checkout. */
   launchCmd: NullString,
+  /** Disk-scan facts for `path`. */
+  scan: Schema.optional(HubCheckoutScan),
+  /** More folders of this project on the same node (copies, backups, old locations). */
+  otherCheckouts: Schema.optional(Schema.Array(HubOtherCheckout)),
 });
 export type HubProjectHost = typeof HubProjectHost.Type;
 
@@ -592,6 +628,20 @@ export const HubImportInput = Schema.Union([
    * With Sync with T3 on, also adds this node's Hub checkouts to T3.
    */
   Schema.Struct({ source: Schema.Literal("t3") }),
+  /**
+   * A disk-scan TSV: `text` (an uploaded file), `path` (a file on this server's machine), or
+   * `scanThisMachine` (scan now with this node's scan settings). Exactly one of the three.
+   */
+  Schema.Struct({
+    source: Schema.Literal("scan"),
+    text: Schema.optional(Schema.String.check(Schema.isMaxLength(8_000_000))),
+    path: Schema.optional(TrimmedNonEmptyString),
+    scanThisMachine: Schema.optional(Schema.Boolean),
+    /** Hub machine for every row; otherwise each row's `nickname` must name a Hub machine. */
+    nodeName: Schema.optional(TrimmedNonEmptyString),
+    /** Report what would change without writing. */
+    dryRun: Schema.optional(Schema.Boolean),
+  }),
 ]);
 export type HubImportInput = typeof HubImportInput.Type;
 
@@ -601,6 +651,12 @@ export const HubImportResult = Schema.Struct({
   skipped: NonNegativeInt,
   /** T3 projects created from Hub checkouts (Sync with T3 only). */
   created: Schema.optional(NonNegativeInt),
+  /** Scan import only: rows read, projects matched, machine checkouts added, and what needs a look. */
+  rows: Schema.optional(NonNegativeInt),
+  matched: Schema.optional(NonNegativeInt),
+  hostsAdded: Schema.optional(NonNegativeInt),
+  ambiguous: Schema.optional(Schema.Array(Schema.String)),
+  dryRun: Schema.optional(Schema.Boolean),
 });
 export type HubImportResult = typeof HubImportResult.Type;
 

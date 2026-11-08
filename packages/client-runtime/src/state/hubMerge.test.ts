@@ -83,6 +83,7 @@ describe("hubMergedProjects", () => {
       [UNREAL_T3, "EpicUnrealPC"],
       [UNITY_T3, "EpicUnityPC"],
     ]);
+    expect(value.hubEnvironmentIds).toEqual([STEVE, UNITY]);
     expect(value.isPending).toBe(false);
     expect(hubMergedProjectsKey([{ environmentId: UNITY, phase: "available" }])).toBeNull();
   });

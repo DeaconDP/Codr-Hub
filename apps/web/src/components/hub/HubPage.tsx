@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { scanAllPlan } from "@t3tools/client-runtime/codrHub/scanAllMachines";
 import { hubMergedProjectsKey } from "@t3tools/client-runtime/state/server";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -172,6 +173,12 @@ export function HubPage() {
                   snapshot={tableSnapshot}
                   projects={merged.projects}
                   selectedNodeName={snapshot?.nodeName ?? ""}
+                  scanAllPlan={scanAllPlan({
+                    hubEnvironmentIds: merged.hubEnvironmentIds,
+                    connectedEnvironmentIds: connected.map((entry) => entry.environmentId),
+                    nodeNameByEnvironmentId: merged.nodeNameByEnvironmentId,
+                    projects: merged.projects,
+                  })}
                 />
                 {snapshot ? (
                   <div className="grid gap-10 lg:grid-cols-2">

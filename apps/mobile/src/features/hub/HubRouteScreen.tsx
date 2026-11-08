@@ -6,6 +6,7 @@ import {
   SORT_OPTIONS,
   type HubProjectSort,
 } from "@t3tools/client-runtime/codrHub/hubFormat";
+import { needsAttention, projectScanChips } from "@t3tools/client-runtime/codrHub/scanAttention";
 import type { HubMergedProjectView } from "@t3tools/contracts";
 import { useNavigation } from "@react-navigation/native";
 import { useState, type ReactNode } from "react";
@@ -25,6 +26,7 @@ import { HubBuildStamp } from "./HubBuildStamp";
 import { hubProjectMenuActions, hubProjectPatchForAction } from "./hubProjectMenu";
 import { HubOverviewView } from "./HubOverviewView";
 import { HubMachinePace } from "./HubPaceView";
+import { HubScanAllButton } from "./HubScanAllButton";
 import { HubStagesView } from "./HubStagesView";
 import { useConnectedHubMachines, useHubPortfolio } from "./useHubPortfolio";
 import { useHubProjectEdits } from "./useHubProjectEdits";
@@ -83,8 +85,9 @@ export function HubRouteScreen() {
           <EmptyState
             variant="plain"
             title="No projects yet"
-            detail="Import your projects from Hub in the web app, or turn on Sync with T3 there."
+            detail="Scan all machines to add their projects, import them from Hub in the web app, or turn on Sync with T3 there."
           />
+          <HubScanAllButton portfolio={portfolio} />
         </HubScroll>
       ) : view === "pace" ? (
         <HubScroll bottomInset={insets.bottom}>
@@ -160,6 +163,7 @@ function ProjectList(props: {
   const startThread = useStartHubThread(portfolio.nodeNameByEnvironmentId);
   const { projects, editProject } = useHubProjectEdits(portfolio);
   const [showFinished, setShowFinished] = useState(false);
+  const [attentionOnly, setAttentionOnly] = useState(false);
 
   const sorted = (filter: "open" | "all", by: HubProjectSort) =>
     filterAndSortProjects(projects, { filter, sort: by, query: "", strategy: snapshot.strategy });
@@ -175,8 +179,13 @@ function ProjectList(props: {
     ...sorted("open", sort).map((view) => ({ view, rank: rankById.get(view.project.id) ?? null })),
     ...(showFinished ? finished.map((view) => ({ view, rank: null })) : []),
   ].filter((row) => !favoritesOnly || row.view.project.favorite);
+  const attentionRows = sorted("all", sort)
+    .filter((view) => needsAttention(view.project))
+    .filter((view) => !favoritesOnly || view.project.favorite)
+    .map((view) => ({ view, rank: rankById.get(view.project.id) ?? null }));
+  const shown = attentionOnly ? attentionRows : rows;
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && attentionRows.length === 0) {
     return (
       <EmptyState
         variant="plain"
@@ -192,7 +201,26 @@ function ProjectList(props: {
 
   return (
     <View className="gap-3">
-      <View className="flex-row justify-end">
+      <View className="flex-row items-center justify-between">
+        {attentionRows.length > 0 || attentionOnly ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: attentionOnly }}
+            onPress={() => setAttentionOnly((current) => !current)}
+            className="min-h-11 justify-center px-1"
+          >
+            <Text
+              className={cn(
+                "text-sm",
+                attentionOnly ? "font-t3-bold text-foreground" : "text-foreground-muted",
+              )}
+            >
+              {attentionOnly ? "Show all" : `Needs attention (${attentionRows.length})`}
+            </Text>
+          </Pressable>
+        ) : (
+          <View />
+        )}
         <Menu
           title="Sort by"
           actions={SORT_OPTIONS.map((option) => ({
@@ -223,7 +251,7 @@ function ProjectList(props: {
         </Menu>
       </View>
       <View collapsable={false} className="overflow-hidden rounded-[24px] bg-grouped-card">
-        {rows.map(({ view, rank }, index) => {
+        {shown.map(({ view, rank }, index) => {
           const threadTarget = startThread.targetFor(view);
           const priority =
             view.project.priority === "none"
@@ -263,6 +291,7 @@ function ProjectList(props: {
                   <Text className="text-xs leading-snug text-foreground-muted" numberOfLines={1}>
                     {[priority, glance].filter(Boolean).join(" · ")}
                   </Text>
+                  <ScanFlags view={view} />
                 </View>
               </Pressable>
               <Menu
@@ -317,7 +346,7 @@ function ProjectList(props: {
           );
         })}
       </View>
-      {!favoritesOnly && finished.length > 0 ? (
+      {!favoritesOnly && !attentionOnly && finished.length > 0 ? (
         <Pressable
           accessibilityRole="button"
           onPress={() => setShowFinished((current) => !current)}
@@ -328,6 +357,28 @@ function ProjectList(props: {
           </Text>
         </Pressable>
       ) : null}
+      {favoritesOnly ? null : <HubScanAllButton portfolio={portfolio} />}
     </View>
+  );
+}
+
+const FLAG_TEXT = {
+  danger: "text-danger-foreground",
+  warning: "text-warning-foreground",
+  muted: "text-foreground-muted",
+} as const;
+
+function ScanFlags(props: { view: HubMergedProjectView }) {
+  const chips = projectScanChips(props.view.project);
+  if (chips.length === 0) return null;
+  return (
+    <Text className="text-xs leading-snug" numberOfLines={1}>
+      {chips.map((chip, index) => (
+        <Text key={chip.label} className={FLAG_TEXT[chip.tone]}>
+          {index > 0 ? " · " : ""}
+          {chip.label}
+        </Text>
+      ))}
+    </Text>
   );
 }

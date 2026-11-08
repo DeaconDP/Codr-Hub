@@ -260,6 +260,42 @@ it.layer(NodeServices.layer)("codr-hub mesh service", (it) => {
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
+  it.effect("imports a scan for a named machine, dry run first, keeping facts on edits", () =>
+    Effect.gen(function* () {
+      const { baseDir, paths } = yield* fixture;
+      const text = [
+        "machine\tnickname\tcategory\tlane\tname\tvcs\tpath\tremote\tbranch\tahead_behind\tdirty\tlast_activity\tsize_gb\tflag\tscanned",
+        "Unity PC\tLuckey\tPrivate\tUnity\tWorld\tnone\tD:\\World\t\t\t\t\t2026-11-01\t3.0\tat-risk\t2026-11-06",
+      ].join("\n");
+      yield* Effect.gen(function* () {
+        const hub = yield* Hub.CodrHubService;
+        yield* hub.setNode({ nodeName: "Steve" });
+        const unknown = yield* hub.importProjects({ source: "scan", text }).pipe(Effect.flip);
+        expect(unknown.message).toMatch(/^Luckey is not a machine in the Hub/);
+        const input = { source: "scan", text, nodeName: "EpicUnityPC" } as const;
+        expect(yield* hub.importProjects({ ...input, dryRun: true })).toMatchObject({
+          imported: 1,
+          hostsAdded: 1,
+          dryRun: true,
+        });
+        expect(yield* Store.readProjects(paths)).toEqual([]);
+        expect(yield* hub.importProjects(input)).toMatchObject({ imported: 1, rows: 1 });
+        expect((yield* hub.importProjects(input)).updated).toBe(0);
+        yield* hub.setNode({ nodeName: "EpicUnityPC" });
+        yield* hub.upsertProject({ id: "world", stickyPort: 8080 });
+        const [saved] = yield* Store.readProjects(paths);
+        expect(saved?.hosts.EpicUnityPC).toMatchObject({
+          path: "D:\\World",
+          stickyPort: 8080,
+          scan: { flags: ["at-risk"], sizeGb: 3 },
+        });
+        yield* hub.upsertProject({ id: "world", localPath: "E:\\World" });
+        const [moved] = yield* Store.readProjects(paths);
+        expect(moved?.hosts.EpicUnityPC?.scan).toBeUndefined();
+      }).pipe(Effect.provide(serviceLayer(baseDir)));
+    }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
   it.effect("syncs with T3 both ways on enable and on each T3 project event", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -9,8 +9,10 @@
     "**/*.ts",
     "../apps/server/src/attachmentPaths.ts",
     "../apps/server/src/attachmentStore.ts",
+    "../apps/server/src/codrHub/diskScan.ts",
     "../apps/server/src/codrHub/fleetDecide.ts",
     "../apps/server/src/codrHub/fleetLogin.ts",
+    "../apps/server/src/codrHub/scanTsv.ts",
     "../apps/server/src/config.ts",
     "../apps/server/src/imageMime.ts"
   ]
