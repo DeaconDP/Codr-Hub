@@ -38,6 +38,8 @@ export function HubScanImportDialog(props: {
   readonly nodeName: string;
   readonly knownNodes: ReadonlyArray<string>;
   readonly scanAllPlan: ScanAllPlan;
+  /** Preselects the machine the rows belong to, such as a machine card's "Import scan…". */
+  readonly initialMachine?: string | undefined;
   readonly onClose: () => void;
 }) {
   const formId = useId();
@@ -45,7 +47,7 @@ export function HubScanImportDialog(props: {
   const [text, setText] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [path, setPath] = useState("");
-  const [machine, setMachine] = useState(FROM_FILE);
+  const [machine, setMachine] = useState(props.initialMachine ?? FROM_FILE);
   const [result, setResult] = useState<HubImportResult | null>(null);
   const [allLines, setAllLines] = useState<ReadonlyArray<ScanAllLine> | null>(null);
   const [allBusy, setAllBusy] = useState(false);

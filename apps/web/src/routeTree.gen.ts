@@ -19,6 +19,7 @@ import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as HubIndexRouteImport } from './routes/hub.index'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
+import { Route as HubInventoryRouteImport } from './routes/hub.inventory'
 import { Route as HubDashboardRouteImport } from './routes/hub.dashboard'
 import { Route as ChatUsageRouteImport } from './routes/_chat.usage'
 import { Route as ChatSettingsRouteImport } from './routes/_chat.settings'
@@ -102,6 +103,11 @@ const ProjectsProjectKeyRoute = ProjectsProjectKeyRouteImport.update({
   id: '/projects/$projectKey',
   path: '/projects/$projectKey',
   getParentRoute: () => rootRouteImport,
+} as any)
+const HubInventoryRoute = HubInventoryRouteImport.update({
+  id: '/inventory',
+  path: '/inventory',
+  getParentRoute: () => HubRoute,
 } as any)
 const HubDashboardRoute = HubDashboardRouteImport.update({
   id: '/dashboard',
@@ -293,6 +299,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof ChatSettingsRouteWithChildren
   '/usage': typeof ChatUsageRoute
   '/hub/dashboard': typeof HubDashboardRoute
+  '/hub/inventory': typeof HubInventoryRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/hub/': typeof HubIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -336,6 +343,7 @@ export interface FileRoutesByTo {
   '/settings': typeof ChatSettingsRouteWithChildren
   '/usage': typeof ChatUsageRoute
   '/hub/dashboard': typeof HubDashboardRoute
+  '/hub/inventory': typeof HubInventoryRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/': typeof ChatIndexRoute
   '/hub': typeof HubIndexRoute
@@ -383,6 +391,7 @@ export interface FileRoutesById {
   '/_chat/settings': typeof ChatSettingsRouteWithChildren
   '/_chat/usage': typeof ChatUsageRoute
   '/hub/dashboard': typeof HubDashboardRoute
+  '/hub/inventory': typeof HubInventoryRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/_chat/': typeof ChatIndexRoute
   '/hub/': typeof HubIndexRoute
@@ -431,6 +440,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/usage'
     | '/hub/dashboard'
+    | '/hub/inventory'
     | '/projects/$projectKey'
     | '/hub/'
     | '/$environmentId/$threadId'
@@ -474,6 +484,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/usage'
     | '/hub/dashboard'
+    | '/hub/inventory'
     | '/projects/$projectKey'
     | '/'
     | '/hub'
@@ -520,6 +531,7 @@ export interface FileRouteTypes {
     | '/_chat/settings'
     | '/_chat/usage'
     | '/hub/dashboard'
+    | '/hub/inventory'
     | '/projects/$projectKey'
     | '/_chat/'
     | '/hub/'
@@ -636,6 +648,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/projects/$projectKey'
       preLoaderRoute: typeof ProjectsProjectKeyRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/hub/inventory': {
+      id: '/hub/inventory'
+      path: '/inventory'
+      fullPath: '/hub/inventory'
+      preLoaderRoute: typeof HubInventoryRouteImport
+      parentRoute: typeof HubRoute
     }
     '/hub/dashboard': {
       id: '/hub/dashboard'
@@ -964,12 +983,14 @@ const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
 interface HubRouteChildren {
   HubDashboardRoute: typeof HubDashboardRoute
+  HubInventoryRoute: typeof HubInventoryRoute
   HubIndexRoute: typeof HubIndexRoute
   HubProjectsProjectIdBoardRoute: typeof HubProjectsProjectIdBoardRoute
 }
 
 const HubRouteChildren: HubRouteChildren = {
   HubDashboardRoute: HubDashboardRoute,
+  HubInventoryRoute: HubInventoryRoute,
   HubIndexRoute: HubIndexRoute,
   HubProjectsProjectIdBoardRoute: HubProjectsProjectIdBoardRoute,
 }

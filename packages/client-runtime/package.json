@@ -109,6 +109,11 @@
       "import": "./src/codrHub/hubActivity.ts",
       "default": "./src/codrHub/hubActivity.ts"
     },
+    "./codrHub/inventoryModel": {
+      "types": "./src/codrHub/inventoryModel.ts",
+      "import": "./src/codrHub/inventoryModel.ts",
+      "default": "./src/codrHub/inventoryModel.ts"
+    },
     "./codrHub/stageBoardModel": {
       "types": "./src/codrHub/stageBoardModel.ts",
       "import": "./src/codrHub/stageBoardModel.ts",

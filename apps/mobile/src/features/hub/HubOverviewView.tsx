@@ -28,6 +28,7 @@ import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { cn } from "../../lib/cn";
 import { useNowMinuteMs } from "../../lib/clock";
 import { relativeTime } from "../../lib/time";
+import { HubInventorySection } from "./HubInventorySection";
 import { useHubInsights, type useHubPortfolio } from "./useHubPortfolio";
 import { hubThreadActionLabel, useStartHubThread } from "./useStartHubThread";
 
@@ -164,6 +165,7 @@ export function HubOverviewView(props: {
           size="compact"
         />
       </View>
+      <HubInventorySection portfolio={portfolio} today={today} />
       {loading ? (
         <View className="items-center py-8" accessibilityLabel="Loading activity">
           <AppActivityIndicator colorClassName="accent-icon-muted" />

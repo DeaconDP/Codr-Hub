@@ -194,6 +194,9 @@ export function HubDashboardPage() {
           <h1>Dashboard</h1>
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
+      <Button size="xs" variant="ghost-muted" render={<Link to="/hub/inventory" />}>
+        Inventory
+      </Button>
     </div>
   );
 

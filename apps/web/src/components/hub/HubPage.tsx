@@ -102,6 +102,9 @@ export function HubPage() {
       <Button size="xs" variant="ghost-muted" render={<Link to="/hub/dashboard" />}>
         Dashboard
       </Button>
+      <Button size="xs" variant="ghost-muted" render={<Link to="/hub/inventory" />}>
+        Inventory
+      </Button>
       {environment && snapshot ? (
         <AutopilotSwitch
           environmentId={environment.environmentId}

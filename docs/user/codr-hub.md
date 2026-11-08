@@ -67,11 +67,26 @@ Each row's machine comes from the file's nickname column. If that name isn't a m
 
 **Needs attention** above the projects list shows projects that need a look, based on the latest scan:
 
-- a folder marked at risk, duplicate or half-copy
-- a checkout with 20 or more changed files, or commits that aren't pushed
-- a code project (not Unity, Unreal or VRChat) with no git remote, outside Archive
+- a folder marked at risk
+- a folder marked duplicate or half-copy
+- a checkout with commits that aren't pushed, or with 20 or more changed files
+- a Private or Public code project (not Unity, Unreal or VRChat) with no remote
 
-Scan flags show as small labels under each project, with **at-risk** in red. Hover a label to see which machines it applies to. On the phone, tap **Needs attention** above the Ranked or Favourites list.
+Folders filed under Archive, and archived projects, count only when they are at risk. Changed files and unpushed commits count only in a machine's working checkout, not in its copies or backups.
+
+Scan flags show as small labels under each project, with **at-risk** in red. Hover a label to see which machines it applies to. On the phone, tap **Needs attention** above the Ranked or Favourites list. [Inventory](#inventory) lists the same folders by reason.
+
+## Inventory
+
+**Inventory** in the Hub header shows what the disk scans found on every machine. It counts **checkouts**: one project folder on one machine, copies included. The rest of the Hub counts **projects**, so a repository on three machines is one project with three checkouts.
+
+- The totals show how many projects are scanned, the share of checkouts with a remote, checkouts with uncommitted work or unpushed commits, and projects that need attention. **Not scanned** projects only came from T3 or Deez-PM.
+- Each machine has a card with its checkouts by version control and by category. Click a card to show only that machine in the list. A machine with no scan yet says so; choose **Import scan…** on its card to import one for it.
+- **What needs attention** lists checkouts under the first reason that applies, in the order above.
+- **Lanes by machine** counts checkouts per engine or platform, and **Last activity** shows the last twelve months, leaving out Archive.
+- **All checkouts** can be searched by name or branch, filtered by machine, category, lane, version control or Needs attention, and sorted by any column. Each browser remembers its filters.
+
+Each machine keeps its colour from **Machine colours**. Choose **Machine colours…** on the Inventory to change one, including machines that aren't connected right now. The phone's Hub **Overview** shows the totals, machine cards and the attention list.
 
 ## Scanning your disks
 
